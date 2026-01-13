@@ -1,0 +1,372 @@
+// CA Off-Market Deal Engine Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ AUTH & USER ============
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  name          String
+  mfaSecret     String?
+  mfaEnabled    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime?
+
+  leads         Lead[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+// ============ CORE PROPERTY DATA ============
+
+model Parcel {
+  id                      String   @id @default(uuid())
+  countyFips              String
+  countyName              String
+  apn                     String   // normalized APN
+  situsAddress            String   // standardized address
+  city                    String?
+  zip                     String?
+  lat                     Float?
+  lng                     Float?
+  propertyType            PropertyType
+  landUseCode             String?
+  lotSize                 Float?   // acres or sqft
+  buildingSqft            Int?
+  yearBuilt               Int?
+  bedrooms                Int?
+  bathrooms               Float?
+  units                   Int?     // for multifamily
+  assessedValueTotal      Float?
+  assessedValueLand       Float?
+  assessedValueImprovement Float?
+  taxYear                 Int?
+
+  // Relationships
+  owner                   Owner?   @relation(fields: [ownerId], references: [id])
+  ownerId                 String?
+  deeds                   Deed[]
+  signals                 Signal[]
+  score                   Score?
+  lead                    Lead?
+
+  // Metadata
+  dataSourceName          String?
+  dataSourceDate          DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([countyFips, apn])
+  @@index([countyName])
+  @@index([propertyType])
+  @@index([city])
+  @@index([zip])
+  @@index([ownerId])
+  @@map("parcels")
+}
+
+enum PropertyType {
+  SFR
+  LAND
+  MULTIFAMILY
+  COMMERCIAL
+  OTHER
+}
+
+model Owner {
+  id                      String   @id @default(uuid())
+  ownerNameRaw            String
+  ownerNameClean          String
+  ownerType               OwnerType
+  mailingAddressStandardized String?
+  mailingCity             String?
+  mailingState            String?
+  mailingZip              String?
+  entityLookupRefs        String?  // JSON: CA SOS links if entity
+
+  // Relationships
+  parcels                 Parcel[]
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([ownerNameClean])
+  @@index([mailingAddressStandardized])
+  @@map("owners")
+}
+
+enum OwnerType {
+  PERSON
+  ENTITY
+  UNKNOWN
+}
+
+model Deed {
+  id                String   @id @default(uuid())
+  apn               String
+  recordingDate     DateTime
+  docType           String?  // grant deed, quitclaim, trustee deed, etc.
+  salePrice         Float?
+  grantorName       String?
+  granteeName       String?
+  instrumentNumber  String?
+
+  // Relationships
+  parcel            Parcel   @relation(fields: [apn], references: [apn])
+
+  createdAt         DateTime @default(now())
+
+  @@index([apn])
+  @@index([recordingDate])
+  @@map("deeds")
+}
+
+// ============ SIGNALS & SCORING ============
+
+model Signal {
+  id            String      @id @default(uuid())
+  apn           String
+  signalType    SignalType
+  signalDate    DateTime
+  severity      Int         // 1-5
+  sourceName    String?
+  sourceUrl     String?
+  rawPayload    Json?       // store original data
+
+  // Relationships
+  parcel        Parcel      @relation(fields: [apn], references: [apn])
+
+  createdAt     DateTime    @default(now())
+
+  @@index([apn])
+  @@index([signalType])
+  @@index([signalDate])
+  @@map("signals")
+}
+
+enum SignalType {
+  NON_OWNER_OCCUPIED
+  LONG_OWNERSHIP
+  RECENT_DEED
+  EQUITY_PROXY
+  PORTFOLIO_OWNER
+  CODE_CASE
+  PERMIT_ISSUE
+  TAX_DELINQUENT
+  FIRE_DAMAGE
+  FORECLOSURE_RELATED
+}
+
+model Score {
+  id              String   @id @default(uuid())
+  apn             String   @unique
+  scoreTotal      Int      // 0-100
+  scoreComponents Json     // weights + contributions
+  topReasons      String[] // array of top reasons
+  confidenceLevel Float?   // 0-1
+
+  // Relationships
+  parcel          Parcel   @relation(fields: [apn], references: [apn])
+
+  calculatedAt    DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([scoreTotal])
+  @@map("scores")
+}
+
+model ScoreWeight {
+  id          String   @id @default(uuid())
+  signalType  SignalType @unique
+  weight      Int      // contribution to total score
+  description String?
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("score_weights")
+}
+
+// ============ CRM / LEADS ============
+
+model Lead {
+  id              String      @id @default(uuid())
+  apn             String      @unique
+  status          LeadStatus  @default(NEW)
+  assignedTo      String?     // user_id (always Damon for MVP)
+  tags            String[]
+  notes           String?
+  nextActionAt    DateTime?
+
+  // Calculated fields cache
+  arvEstimate     Float?
+  rentEstimate    Float?
+  rehabEstimate   Float?
+  offerRanges     Json?       // store calculated offer ranges
+
+  // Relationships
+  parcel          Parcel      @relation(fields: [apn], references: [apn])
+  user            User?       @relation(fields: [assignedTo], references: [id])
+  outreachLogs    OutreachLog[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+  @@index([assignedTo])
+  @@index([nextActionAt])
+  @@map("leads")
+}
+
+enum LeadStatus {
+  NEW
+  RESEARCHED
+  MAILED
+  CALLED
+  SPOKE
+  NEGOTIATING
+  UNDER_CONTRACT
+  DEAD
+  ARCHIVED
+}
+
+model OutreachLog {
+  id          String        @id @default(uuid())
+  leadId      String
+  method      OutreachMethod
+  outcome     String?       // no answer, left vm, spoke, not interested, etc.
+  note        String?
+  timestamp   DateTime      @default(now())
+
+  // Relationships
+  lead        Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([timestamp])
+  @@map("outreach_logs")
+}
+
+enum OutreachMethod {
+  MAIL
+  CALL
+  EMAIL
+  DOOR
+  TEXT
+  OTHER
+}
+
+// ============ COMPS & MARKET DATA ============
+
+model Comp {
+  id              String   @id @default(uuid())
+  countyName      String
+  address         String
+  saleDate        DateTime
+  salePrice       Float
+  propertyType    PropertyType
+  buildingSqft    Int?
+  lotSize         Float?
+  bedrooms        Int?
+  bathrooms       Float?
+  yearBuilt       Int?
+  pricePerSqft    Float?
+
+  // Geolocation for radius searches
+  lat             Float?
+  lng             Float?
+
+  dataSource      String?
+  createdAt       DateTime @default(now())
+
+  @@index([countyName, saleDate])
+  @@index([propertyType])
+  @@map("comps")
+}
+
+// ============ ETL & JOBS ============
+
+model EtlJob {
+  id              String   @id @default(uuid())
+  jobType         String   // "assessor_import", "deed_import", "signal_generation", etc.
+  countyName      String?
+  status          JobStatus @default(PENDING)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  recordsProcessed Int?
+  recordsSucceeded Int?
+  recordsFailed   Int?
+  errorLog        String?
+  metadata        Json?    // store job-specific data
+
+  createdAt       DateTime @default(now())
+
+  @@index([jobType, status])
+  @@index([countyName])
+  @@map("etl_jobs")
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ============ AUDIT & COMPLIANCE ============
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String   // "login", "export", "data_access", etc.
+  resource    String?  // table/record affected
+  resourceId  String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  timestamp   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model DncList {
+  id          String   @id @default(uuid())
+  ownerName   String?
+  address     String?
+  phone       String?
+  email       String?
+  reason      String?
+  addedAt     DateTime @default(now())
+
+  @@index([ownerName])
+  @@map("dnc_list")
+}
+
+// ============ APP CONFIGURATION ============
+
+model AppConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("app_config")
+}
