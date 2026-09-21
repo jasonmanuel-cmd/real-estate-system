@@ -44,7 +44,7 @@ echo.
 REM Step 2: Update Prisma schema for SQLite
 echo Step 2: Configuring database for SQLite...
 cd backend
-powershell -Command "(gc prisma\schema.prisma) -replace 'provider = \"postgresql\"', 'provider = \"sqlite\"' | Out-File -encoding ASCII prisma\schema.prisma"
+copy /Y prisma\schema.sqlite.prisma prisma\schema.prisma >nul
 echo Database configured for SQLite
 echo.
 
@@ -56,9 +56,8 @@ echo.
 
 REM Step 4: Setup database
 echo Step 4: Setting up database...
-call npx prisma migrate dev --name init
+call npx prisma migrate dev --name init --skip-generate
 call npx prisma generate
-call npm run build
 echo Database setup complete
 echo.
 
