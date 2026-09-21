@@ -1,8 +1,10 @@
-import { JobStatus } from '@prisma/client';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { signalsEngine } from '../services/signalsEngine';
 import { scoringEngine } from '../services/scoringEngine';
+
+// Job status values (SQLite uses strings instead of enums)
+type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 export interface EtlAdapter {
   name: string;
@@ -38,7 +40,7 @@ export class EtlRunner {
       logger.info(`Starting ETL job ${jobId} for ${adapter.name}`);
 
       // Mark job as running
-      await this.updateJob(jobId, { status: JobStatus.RUNNING, startedAt: new Date() });
+      await this.updateJob(jobId, { status: 'RUNNING', startedAt: new Date() });
 
       // EXTRACT
       logger.info(`[${jobId}] Extracting data...`);
@@ -75,7 +77,7 @@ export class EtlRunner {
 
       // Mark job as completed
       await this.updateJob(jobId, {
-        status: JobStatus.COMPLETED,
+        status: 'COMPLETED',
         completedAt: new Date(),
         recordsProcessed: rawData.length,
         recordsSucceeded: transformedData.length,
@@ -86,7 +88,7 @@ export class EtlRunner {
 
       return {
         jobId,
-        status: JobStatus.COMPLETED,
+        status: 'COMPLETED',
         recordsProcessed: rawData.length,
         recordsSucceeded: transformedData.length,
         recordsFailed: rawData.length - transformedData.length,
@@ -97,14 +99,14 @@ export class EtlRunner {
 
       // Mark job as failed
       await this.updateJob(jobId, {
-        status: JobStatus.FAILED,
+        status: 'FAILED',
         completedAt: new Date(),
         errorLog: error.message,
       });
 
       return {
         jobId,
-        status: JobStatus.FAILED,
+        status: 'FAILED',
         recordsProcessed: 0,
         recordsSucceeded: 0,
         recordsFailed: 0,
@@ -121,7 +123,7 @@ export class EtlRunner {
       data: {
         jobType: adapter.name,
         countyName: adapter.countyName,
-        status: JobStatus.PENDING,
+        status: 'PENDING',
       },
     });
 
