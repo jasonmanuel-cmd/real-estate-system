@@ -19,7 +19,7 @@ export default function Home() {
     } else {
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, hydrated, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
