@@ -3,7 +3,6 @@ import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { stringify } from 'csv-stringify/sync';
-import { LeadStatus } from '@prisma/client';
 
 export class ExportController {
   /**

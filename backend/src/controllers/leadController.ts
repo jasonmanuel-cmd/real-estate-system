@@ -2,7 +2,11 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
-import { LeadStatus, PropertyType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+
+// Type aliases for SQLite (no enums)
+type PropertyType = 'SFR' | 'LAND' | 'MULTIFAMILY' | 'COMMERCIAL' | 'OTHER';
+type LeadStatus = 'NEW' | 'RESEARCHED' | 'MAILED' | 'CALLED' | 'UNDER_CONTRACT' | 'ARCHIVED' | 'LOST';
 
 export class LeadController {
   /**
@@ -209,7 +213,7 @@ export class LeadController {
       const lead = await prisma.lead.create({
         data: {
           apn,
-          status: LeadStatus.NEW,
+          status: 'NEW',
           assignedTo: req.user?.id,
         },
         include: {
@@ -309,7 +313,7 @@ export class LeadController {
       // Update status to ARCHIVED instead of deleting
       await prisma.lead.update({
         where: { id },
-        data: { status: LeadStatus.ARCHIVED },
+        data: { status: 'ARCHIVED' },
       });
 
       res.json({ success: true });
