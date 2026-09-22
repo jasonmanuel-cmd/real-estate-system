@@ -1,6 +1,19 @@
-import { SignalType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
+
+// Signal types (SQLite uses strings instead of enums)
+type SignalType =
+  | 'NON_OWNER_OCCUPIED'
+  | 'LONG_OWNERSHIP'
+  | 'RECENT_DEED'
+  | 'EQUITY_PROXY'
+  | 'PORTFOLIO_OWNER'
+  | 'CODE_CASE'
+  | 'PERMIT_ISSUE'
+  | 'TAX_DELINQUENT'
+  | 'FIRE_DAMAGE'
+  | 'FORECLOSURE_RELATED';
 
 interface SignalDefinition {
   type: SignalType;
@@ -27,7 +40,7 @@ export class SignalsEngine {
     this.signalDefinitions = [
       // BASELINE SIGNAL 1: Non-owner occupied
       {
-        type: SignalType.NON_OWNER_OCCUPIED,
+        type: 'NON_OWNER_OCCUPIED',
         severity: 3,
         checkCondition: (parcel, context) => {
           if (!parcel.owner?.mailingAddressStandardized || !parcel.situsAddress) {
@@ -46,7 +59,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 2: Long ownership (various thresholds)
       {
-        type: SignalType.LONG_OWNERSHIP,
+        type: 'LONG_OWNERSHIP',
         severity: 2,
         checkCondition: (parcel, context) => {
           const yearsOwned = context.yearsOwned;
@@ -60,7 +73,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 3: Recent deed activity
       {
-        type: SignalType.RECENT_DEED,
+        type: 'RECENT_DEED',
         severity: 3,
         checkCondition: (parcel, context) => {
           return context.hasRecentDeed;
@@ -73,7 +86,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 4: Equity proxy (long ownership + assessed value)
       {
-        type: SignalType.EQUITY_PROXY,
+        type: 'EQUITY_PROXY',
         severity: 3,
         checkCondition: (parcel, context) => {
           const yearsOwned = context.yearsOwned;
@@ -91,7 +104,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 5: Portfolio owner
       {
-        type: SignalType.PORTFOLIO_OWNER,
+        type: 'PORTFOLIO_OWNER',
         severity: 2,
         checkCondition: (parcel, context) => {
           return context.ownerParcelCount >= 2;
@@ -104,7 +117,7 @@ export class SignalsEngine {
 
       // OPTIONAL SIGNAL: Code enforcement cases
       {
-        type: SignalType.CODE_CASE,
+        type: 'CODE_CASE',
         severity: 4,
         checkCondition: (parcel, context) => {
           return context.hasOpenCodeCase;
@@ -117,7 +130,7 @@ export class SignalsEngine {
 
       // OPTIONAL SIGNAL: Tax delinquency
       {
-        type: SignalType.TAX_DELINQUENT,
+        type: 'TAX_DELINQUENT',
         severity: 5,
         checkCondition: (parcel, context) => {
           return context.isTaxDelinquent;
@@ -130,7 +143,7 @@ export class SignalsEngine {
 
       // OPTIONAL SIGNAL: Foreclosure-related deed activity
       {
-        type: SignalType.FORECLOSURE_RELATED,
+        type: 'FORECLOSURE_RELATED',
         severity: 5,
         checkCondition: (parcel, context) => {
           return context.hasForeclosureDeed;
@@ -168,7 +181,7 @@ export class SignalsEngine {
       const context = await this.buildParcelContext(parcel);
 
       // Delete existing signals for this parcel
-      await prisma.signal.deleteMany({ where: { apn } });
+      await prisma.signal.deleteMany({ where: { parcelId: parcel.id } });
 
       // Generate new signals
       let signalsGenerated = 0;
@@ -176,13 +189,14 @@ export class SignalsEngine {
 
       for (const signalDef of this.signalDefinitions) {
         if (signalDef.checkCondition(parcel, context)) {
+          const metadata = signalDef.getMetadata(parcel, context);
           signalsToCreate.push({
-            apn,
+            parcelId: parcel.id,
             signalType: signalDef.type,
             severity: signalDef.severity,
             signalDate: new Date(),
             sourceName: 'system',
-            rawPayload: signalDef.getMetadata(parcel, context),
+            rawPayload: JSON.stringify(metadata), // Store as JSON string for SQLite
           });
           signalsGenerated++;
         }

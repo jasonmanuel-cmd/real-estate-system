@@ -1,11 +1,11 @@
-// CA Off-Market Deal Engine Database Schema
+// CA Off-Market Deal Engine Database Schema - SQLite Version
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -34,13 +34,13 @@ model Parcel {
   id                      String   @id @default(uuid())
   countyFips              String
   countyName              String
-  apn                     String   // normalized APN
+  apn                     String   @unique // normalized APN - MUST BE UNIQUE for SQLite
   situsAddress            String   // standardized address
   city                    String?
   zip                     String?
   lat                     Float?
   lng                     Float?
-  propertyType            PropertyType
+  propertyType            String   // SFR, LAND, MULTIFAMILY, COMMERCIAL, OTHER
   landUseCode             String?
   lotSize                 Float?   // acres or sqft
   buildingSqft            Int?
@@ -67,7 +67,6 @@ model Parcel {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  @@unique([countyFips, apn])
   @@index([countyName])
   @@index([propertyType])
   @@index([city])
@@ -76,24 +75,16 @@ model Parcel {
   @@map("parcels")
 }
 
-enum PropertyType {
-  SFR
-  LAND
-  MULTIFAMILY
-  COMMERCIAL
-  OTHER
-}
-
 model Owner {
   id                      String   @id @default(uuid())
   ownerNameRaw            String
   ownerNameClean          String
-  ownerType               OwnerType
+  ownerType               String   // PERSON, ENTITY, UNKNOWN
   mailingAddressStandardized String?
   mailingCity             String?
   mailingState            String?
   mailingZip              String?
-  entityLookupRefs        String?  // JSON: CA SOS links if entity
+  entityLookupRefs        String?  // JSON as text
 
   // Relationships
   parcels                 Parcel[]
@@ -106,15 +97,9 @@ model Owner {
   @@map("owners")
 }
 
-enum OwnerType {
-  PERSON
-  ENTITY
-  UNKNOWN
-}
-
 model Deed {
   id                String   @id @default(uuid())
-  apn               String
+  parcelId          String   // Changed to use parcelId instead of apn
   recordingDate     DateTime
   docType           String?  // grant deed, quitclaim, trustee deed, etc.
   salePrice         Float?
@@ -123,11 +108,11 @@ model Deed {
   instrumentNumber  String?
 
   // Relationships
-  parcel            Parcel   @relation(fields: [apn], references: [apn])
+  parcel            Parcel   @relation(fields: [parcelId], references: [id])
 
   createdAt         DateTime @default(now())
 
-  @@index([apn])
+  @@index([parcelId])
   @@index([recordingDate])
   @@map("deeds")
 }
@@ -136,48 +121,35 @@ model Deed {
 
 model Signal {
   id            String      @id @default(uuid())
-  apn           String
-  signalType    SignalType
+  parcelId      String      // Changed to use parcelId
+  signalType    String      // NON_OWNER_OCCUPIED, LONG_OWNERSHIP, etc.
   signalDate    DateTime
   severity      Int         // 1-5
   sourceName    String?
   sourceUrl     String?
-  rawPayload    Json?       // store original data
+  rawPayload    String?     // JSON stored as text
 
   // Relationships
-  parcel        Parcel      @relation(fields: [apn], references: [apn])
+  parcel        Parcel      @relation(fields: [parcelId], references: [id])
 
   createdAt     DateTime    @default(now())
 
-  @@index([apn])
+  @@index([parcelId])
   @@index([signalType])
   @@index([signalDate])
   @@map("signals")
 }
 
-enum SignalType {
-  NON_OWNER_OCCUPIED
-  LONG_OWNERSHIP
-  RECENT_DEED
-  EQUITY_PROXY
-  PORTFOLIO_OWNER
-  CODE_CASE
-  PERMIT_ISSUE
-  TAX_DELINQUENT
-  FIRE_DAMAGE
-  FORECLOSURE_RELATED
-}
-
 model Score {
   id              String   @id @default(uuid())
-  apn             String   @unique
+  parcelId        String   @unique  // Changed to use parcelId
   scoreTotal      Int      // 0-100
-  scoreComponents Json     // weights + contributions
-  topReasons      String[] // array of top reasons
+  scoreComponents String   // JSON stored as text
+  topReasons      String   // Comma-separated list
   confidenceLevel Float?   // 0-1
 
   // Relationships
-  parcel          Parcel   @relation(fields: [apn], references: [apn])
+  parcel          Parcel   @relation(fields: [parcelId], references: [id])
 
   calculatedAt    DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -188,7 +160,7 @@ model Score {
 
 model ScoreWeight {
   id          String   @id @default(uuid())
-  signalType  SignalType @unique
+  signalType  String   @unique  // Changed from enum
   weight      Int      // contribution to total score
   description String?
   isActive    Boolean  @default(true)
@@ -203,10 +175,10 @@ model ScoreWeight {
 
 model Lead {
   id              String      @id @default(uuid())
-  apn             String      @unique
-  status          LeadStatus  @default(NEW)
-  assignedTo      String?     // user_id (always Damon for MVP)
-  tags            String[]
+  parcelId        String      @unique  // Changed to use parcelId
+  status          String      @default("NEW")  // NEW, RESEARCHED, MAILED, etc.
+  assignedTo      String?     // user_id
+  tags            String?     // Comma-separated list
   notes           String?
   nextActionAt    DateTime?
 
@@ -214,10 +186,10 @@ model Lead {
   arvEstimate     Float?
   rentEstimate    Float?
   rehabEstimate   Float?
-  offerRanges     Json?       // store calculated offer ranges
+  offerRanges     String?     // JSON stored as text
 
   // Relationships
-  parcel          Parcel      @relation(fields: [apn], references: [apn])
+  parcel          Parcel      @relation(fields: [parcelId], references: [id])
   user            User?       @relation(fields: [assignedTo], references: [id])
   outreachLogs    OutreachLog[]
 
@@ -230,23 +202,11 @@ model Lead {
   @@map("leads")
 }
 
-enum LeadStatus {
-  NEW
-  RESEARCHED
-  MAILED
-  CALLED
-  SPOKE
-  NEGOTIATING
-  UNDER_CONTRACT
-  DEAD
-  ARCHIVED
-}
-
 model OutreachLog {
   id          String        @id @default(uuid())
   leadId      String
-  method      OutreachMethod
-  outcome     String?       // no answer, left vm, spoke, not interested, etc.
+  method      String        // MAIL, CALL, EMAIL, DOOR, TEXT, OTHER
+  outcome     String?
   note        String?
   timestamp   DateTime      @default(now())
 
@@ -258,15 +218,6 @@ model OutreachLog {
   @@map("outreach_logs")
 }
 
-enum OutreachMethod {
-  MAIL
-  CALL
-  EMAIL
-  DOOR
-  TEXT
-  OTHER
-}
-
 // ============ COMPS & MARKET DATA ============
 
 model Comp {
@@ -275,7 +226,7 @@ model Comp {
   address         String
   saleDate        DateTime
   salePrice       Float
-  propertyType    PropertyType
+  propertyType    String   // Changed from enum
   buildingSqft    Int?
   lotSize         Float?
   bedrooms        Int?
@@ -299,16 +250,16 @@ model Comp {
 
 model EtlJob {
   id              String   @id @default(uuid())
-  jobType         String   // "assessor_import", "deed_import", "signal_generation", etc.
+  jobType         String
   countyName      String?
-  status          JobStatus @default(PENDING)
+  status          String   @default("PENDING")  // PENDING, RUNNING, COMPLETED, FAILED
   startedAt       DateTime?
   completedAt     DateTime?
   recordsProcessed Int?
   recordsSucceeded Int?
   recordsFailed   Int?
   errorLog        String?
-  metadata        Json?    // store job-specific data
+  metadata        String?  // JSON stored as text
 
   createdAt       DateTime @default(now())
 
@@ -317,25 +268,17 @@ model EtlJob {
   @@map("etl_jobs")
 }
 
-enum JobStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-  CANCELLED
-}
-
 // ============ AUDIT & COMPLIANCE ============
 
 model AuditLog {
   id          String   @id @default(uuid())
   userId      String?
-  action      String   // "login", "export", "data_access", etc.
-  resource    String?  // table/record affected
+  action      String
+  resource    String?
   resourceId  String?
   ipAddress   String?
   userAgent   String?
-  metadata    Json?
+  metadata    String?  // JSON stored as text
   timestamp   DateTime @default(now())
 
   user        User?    @relation(fields: [userId], references: [id])
@@ -364,7 +307,7 @@ model DncList {
 model AppConfig {
   id          String   @id @default(uuid())
   key         String   @unique
-  value       Json
+  value       String   // JSON stored as text
   description String?
   updatedAt   DateTime @updatedAt
 
