@@ -44,8 +44,8 @@ services:
   # Frontend (Next.js)
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: ca-deal-engine-web
     environment:
       NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:3001}
