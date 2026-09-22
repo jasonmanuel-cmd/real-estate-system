@@ -22,8 +22,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Don't hard-redirect on failed login/MFA attempts - let the form show the error
+    const isAuthRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isAuthRequest) {
       localStorage.removeItem('token');
+      localStorage.removeItem('user');
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -42,7 +45,9 @@ export const authApi = {
 
   setupMfa: () => api.post('/auth/mfa/setup'),
 
-  verifyMfa: (token: string) =>
+  // Second step of MFA setup: verify TOTP token to enable MFA
+  // (distinct from verifyMfa above, which completes an MFA login)
+  verifyAndEnableMfa: (token: string) =>
     api.post('/auth/mfa/verify', { token }),
 };
 

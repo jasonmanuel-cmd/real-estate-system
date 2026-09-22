@@ -36,8 +36,8 @@ echo ETL_ENABLED=false
 echo LOG_LEVEL="info"
 echo BCRYPT_ROUNDS=12
 echo CORS_ORIGIN="http://localhost:3000"
-echo KERN_COUNTY_DATA_FILE="./data/sample_kern_data.csv"
-) > .env
+echo KERN_COUNTY_DATA_FILE="../data/sample_kern_data.csv"
+) > backend\.env
 echo Environment file created
 echo.
 
