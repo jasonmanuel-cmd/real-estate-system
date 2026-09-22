@@ -18,12 +18,16 @@ router.get('/search', async (req: Request, res: Response) => {
     const where: any = {};
 
     // Search by address or APN
-    // NOTE: SQLite does not support `mode: 'insensitive'` (Postgres-only).
-    // SQLite's LIKE is already case-insensitive for ASCII by default.
+    // Provider-agnostic case-insensitivity: SQLite LIKE is case-insensitive
+    // for ASCII but Postgres LIKE is not, and mode:'insensitive' breaks SQLite.
+    // Match the raw, upper, and lower variants of the query instead.
     if (q) {
+      const qs = q as string;
       where.OR = [
-        { situsAddress: { contains: q as string } },
-        { apn: { contains: q as string } },
+        { situsAddress: { contains: qs } },
+        { situsAddress: { contains: qs.toUpperCase() } },
+        { situsAddress: { contains: qs.toLowerCase() } },
+        { apn: { contains: qs } },
       ];
     }
 

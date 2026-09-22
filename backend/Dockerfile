@@ -14,12 +14,13 @@ RUN npm ci --workspace=backend --include=dev
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/backend/node_modules ./backend/node_modules
 COPY backend/ ./backend/
 WORKDIR /app/backend
 
-# Generate Prisma client
-RUN npx prisma generate
+# Generate Prisma client (uses schema.prisma; Docker swaps in the postgres variant).
+# binary-targets must match the runner's openssl (alpine = 3.0.x) or the query
+# engine won't be found at runtime.
+RUN cp prisma/schema.postgres.prisma prisma/schema.prisma && npx prisma generate
 
 # Build TypeScript
 RUN npm run build
@@ -28,7 +29,10 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app/backend
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
+
+# Prisma engines need OpenSSL on alpine
+RUN apk add --no-cache openssl
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nodejs
@@ -46,5 +50,5 @@ USER nodejs
 
 EXPOSE 3001
 
-# Run migrations and start server
-CMD npx prisma migrate deploy && node dist/server.js
+# Push schema and start server (migrations are SQLite-dialect; db push is provider-agnostic)
+CMD npx prisma db push --skip-generate && node dist/server.js
