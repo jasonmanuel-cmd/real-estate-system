@@ -8,18 +8,18 @@ import { useAuthStore } from '@/lib/store';
 export default function LeadDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, hydrated } = useAuthStore();
   const [lead, setLead] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && hydrated) {
       router.push('/login');
       return;
     }
 
     fetchLead();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, hydrated]);
 
   const fetchLead = async () => {
     try {
@@ -79,7 +79,10 @@ export default function LeadDetailPage() {
               {lead.score?.total || 0}
             </div>
             <div className="space-y-2">
-              {lead.score?.topReasons?.map((reason: string, idx: number) => (
+              {(Array.isArray(lead.score?.topReasons)
+                ? lead.score.topReasons
+                : (lead.score?.topReasons || '').split(',').filter(Boolean)
+              ).map((reason: string, idx: number) => (
                 <div key={idx} className="text-sm text-gray-700">
                   • {reason}
                 </div>
@@ -129,7 +132,7 @@ export default function LeadDetailPage() {
                 {lead.allSignals.map((signal: any) => (
                   <div key={signal.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-medium text-sm">{signal.type.replace(/_/g, ' ')}</h3>
+                      <h3 className="font-medium text-sm">{(signal.type || signal.signalType || '').replace(/_/g, ' ')}</h3>
                       <span className={`text-xs px-2 py-1 rounded ${
                         signal.severity >= 4 ? 'bg-red-100 text-red-800' :
                         signal.severity >= 3 ? 'bg-yellow-100 text-yellow-800' :
@@ -139,7 +142,7 @@ export default function LeadDetailPage() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-600">
-                      {new Date(signal.date).toLocaleDateString()}
+                      {new Date(signal.date || signal.signalDate).toLocaleDateString()}
                     </p>
                   </div>
                 ))}

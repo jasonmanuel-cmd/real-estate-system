@@ -7,7 +7,7 @@ import { useAuthStore } from '@/lib/store';
 
 export default function LeadsPage() {
   const router = useRouter();
-  const { isAuthenticated, user, loadAuth } = useAuthStore();
+  const { isAuthenticated, user, hydrated, loadAuth } = useAuthStore();
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,13 +17,13 @@ export default function LeadsPage() {
   }, [loadAuth]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && hydrated) {
       router.push('/login');
       return;
     }
 
     fetchLeads();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, hydrated, router]);
 
   const fetchLeads = async () => {
     try {
@@ -123,9 +123,15 @@ export default function LeadsPage() {
                   </div>
                 </div>
 
-                {lead.score?.topReasons && lead.score.topReasons.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {lead.score.topReasons.slice(0, 2).map((reason: string, idx: number) => (
+                {(Array.isArray(lead.score?.topReasons)
+                  ? lead.score.topReasons
+                  : (lead.score?.topReasons || '').split(',').filter(Boolean)
+                ).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(Array.isArray(lead.score.topReasons)
+                      ? lead.score.topReasons
+                      : lead.score.topReasons.split(',').filter(Boolean)
+                    ).slice(0, 2).map((reason: string, idx: number) => (
                       <span
                         key={idx}
                         className="inline-block bg-blue-50 text-blue-700 text-xs px-3 py-1 rounded-full"

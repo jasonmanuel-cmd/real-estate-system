@@ -10,6 +10,7 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  hydrated: boolean;
   setAuth: (user: User, token: string) => void;
   clearAuth: () => void;
   loadAuth: () => void;
@@ -19,6 +20,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   isAuthenticated: false,
+  // True until loadAuth() has run once; pages use this to avoid
+  // redirecting to /login before localStorage has been checked.
+  hydrated: false,
 
   setAuth: (user, token) => {
     localStorage.setItem('token', token);
@@ -37,7 +41,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     const userStr = localStorage.getItem('user');
     if (token && userStr) {
       const user = JSON.parse(userStr);
-      set({ user, token, isAuthenticated: true });
+      set({ user, token, isAuthenticated: true, hydrated: true });
+    } else {
+      set({ hydrated: true });
     }
   },
 }));

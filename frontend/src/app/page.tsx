@@ -6,13 +6,14 @@ import { useAuthStore } from '@/lib/store';
 
 export default function Home() {
   const router = useRouter();
-  const { isAuthenticated, loadAuth } = useAuthStore();
+  const { isAuthenticated, hydrated, loadAuth } = useAuthStore();
 
   useEffect(() => {
     loadAuth();
   }, [loadAuth]);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (isAuthenticated) {
       router.push('/leads');
     } else {
