@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import jwt, { Secret } from 'jsonwebtoken';
+import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import prisma from '../config/database';
@@ -249,9 +249,10 @@ export class AuthService {
    * Generate JWT token
    */
   private generateToken(payload: JwtPayload, expiresIn?: string): string {
-    return jwt.sign(payload, JWT_SECRET, {
+    const options: SignOptions = {
       expiresIn: expiresIn || JWT_EXPIRES_IN,
-    });
+    };
+    return jwt.sign(payload, JWT_SECRET, options);
   }
 
   /**
