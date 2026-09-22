@@ -4,12 +4,14 @@
  *
  * Usage:
  *   npm run etl:run -- kern_county_assessor
+ *   npm run etl:run -- kern_county_arcgis
  *   ts-node src/etl/run-etl.ts kern_county_assessor
  */
 
 import dotenv from 'dotenv';
 import { etlRunner } from './etlRunner';
 import { kernCountyAssessorAdapter } from './adapters/kernCountyAssessorAdapter';
+import { kernCountyArcgisAdapter } from './adapters/kernCountyArcgisAdapter';
 import { logger } from '../utils/logger';
 
 dotenv.config();
@@ -28,6 +30,9 @@ async function main() {
   switch (adapterName) {
     case 'kern_county_assessor':
       adapter = kernCountyAssessorAdapter;
+      break;
+    case 'kern_county_arcgis':
+      adapter = kernCountyArcgisAdapter;
       break;
     default:
       console.error(`Unknown adapter: ${adapterName}`);

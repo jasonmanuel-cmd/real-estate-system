@@ -9,7 +9,8 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "ts-node src/etl/run-etl.ts kern_county_assessor",
-    "etl:run": "ts-node src/etl/run-etl.ts"
+    "etl:run": "ts-node src/etl/run-etl.ts",
+    "etl:real": "ts-node src/etl/run-etl.ts kern_county_arcgis"
   },
   "dependencies": {
     "@prisma/client": "^5.8.0",
