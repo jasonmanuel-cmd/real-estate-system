@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
 import { dealCalculator } from '../services/dealCalculator';
+import { PropertyType } from '../types';
 
 const router = Router();
 

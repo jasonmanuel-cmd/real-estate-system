@@ -250,7 +250,7 @@ export class AuthService {
    */
   private generateToken(payload: JwtPayload, expiresIn?: string): string {
     const options: SignOptions = {
-      expiresIn: expiresIn || JWT_EXPIRES_IN,
+      expiresIn: (expiresIn || JWT_EXPIRES_IN) as SignOptions['expiresIn'],
     };
     return jwt.sign(payload, JWT_SECRET, options);
   }

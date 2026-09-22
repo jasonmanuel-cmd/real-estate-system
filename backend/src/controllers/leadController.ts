@@ -204,7 +204,7 @@ export class LeadController {
       }
 
       // Check if lead already exists
-      const existingLead = await prisma.lead.findUnique({ where: { apn } });
+      const existingLead = await prisma.lead.findUnique({ where: { parcelId: parcel.id } });
       if (existingLead) {
         return res.status(400).json({ error: 'Lead already exists for this parcel' });
       }
@@ -212,7 +212,7 @@ export class LeadController {
       // Create lead
       const lead = await prisma.lead.create({
         data: {
-          apn,
+          parcelId: parcel.id,
           status: 'NEW',
           assignedTo: req.user?.id,
         },
@@ -329,7 +329,7 @@ export class LeadController {
   private formatLead(lead: any) {
     return {
       id: lead.id,
-      apn: lead.apn,
+      apn: lead.parcel.apn,
       status: lead.status,
       tags: lead.tags,
       notes: lead.notes,
