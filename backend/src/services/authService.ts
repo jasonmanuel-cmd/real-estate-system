@@ -71,7 +71,7 @@ export class AuthService {
         userId: user.id,
         action: 'login',
         resource: 'auth',
-        metadata: { email },
+        metadata: JSON.stringify({ email }), // Store as JSON string for SQLite
       },
     });
 

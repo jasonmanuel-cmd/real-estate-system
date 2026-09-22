@@ -155,12 +155,12 @@ export class KernCountyAssessorAdapter implements EtlAdapter {
           // Data source metadata
           dataSourceName: 'Kern County Assessor',
           dataSourceDate: new Date(),
-        };
 
-        // Geocoding (optional - can be done in post-processing)
-        // For now, leave lat/lng null - can add geocoding service later
-        parcelData['lat'] = null;
-        parcelData['lng'] = null;
+          // Geocoding (optional - can be done in post-processing)
+          // For now, leave lat/lng null - can add geocoding service later
+          lat: null,
+          lng: null,
+        };
 
         transformed.push(parcelData);
       } catch (error: any) {
@@ -197,13 +197,10 @@ export class KernCountyAssessorAdapter implements EtlAdapter {
           });
         }
 
-        // Upsert parcel
+        // Upsert parcel (SQLite uses apn as unique key)
         await prisma.parcel.upsert({
           where: {
-            countyFips_apn: {
-              countyFips: data.countyFips,
-              apn: data.apn,
-            },
+            apn: data.apn,
           },
           create: {
             ...data,
