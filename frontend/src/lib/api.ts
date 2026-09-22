@@ -49,6 +49,10 @@ export const authApi = {
   // (distinct from verifyMfa above, which completes an MFA login)
   verifyAndEnableMfa: (token: string) =>
     api.post('/auth/mfa/verify', { token }),
+
+  // Disable MFA (requires current password)
+  disableMfa: (password: string) =>
+    api.post('/auth/mfa/disable', { password }),
 };
 
 // Leads API

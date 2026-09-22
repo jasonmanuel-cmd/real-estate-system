@@ -64,12 +64,20 @@ export default function LeadsPage() {
               <h1 className="text-2xl font-bold text-gray-900">CA Deal Engine</h1>
               <p className="text-sm text-gray-600">Welcome, {user?.name}</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
-            >
-              Logout
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push('/settings')}
+                className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+              >
+                Settings
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </div>
