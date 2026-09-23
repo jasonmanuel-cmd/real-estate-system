@@ -113,10 +113,11 @@ export default function LeadsPage() {
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900">
-                      {lead.property?.address || 'Unknown Address'}
+                      {lead.property?.address || `Parcel ${lead.apn}`}
                     </h3>
                     <p className="text-sm text-gray-600">
-                      {lead.property?.city}, {lead.property?.zip} • {lead.property?.county} County
+                      {lead.property?.city ? `${lead.property.city}${lead.property.zip ? ', ' + lead.property.zip : ''} • ` : ''}
+                      {lead.property?.county} County
                     </p>
                     <p className="text-sm text-gray-500 mt-1">
                       {lead.property?.propertyType} • APN: {lead.apn}

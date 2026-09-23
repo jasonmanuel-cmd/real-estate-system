@@ -8,6 +8,9 @@ type SignalType =
   | 'RECENT_DEED'
   | 'EQUITY_PROXY'
   | 'PORTFOLIO_OWNER'
+  | 'HIGH_LAND_RATIO'
+  | 'LARGE_LOT'
+  | 'BELOW_MARKET_VALUE'
   | 'CODE_CASE'
   | 'PERMIT_ISSUE'
   | 'TAX_DELINQUENT'
@@ -42,6 +45,9 @@ export class ScoringEngine {
     this.defaultWeights.set('RECENT_DEED', 15);
     this.defaultWeights.set('EQUITY_PROXY', 15);
     this.defaultWeights.set('PORTFOLIO_OWNER', 15);
+    this.defaultWeights.set('HIGH_LAND_RATIO', 15);
+    this.defaultWeights.set('LARGE_LOT', 10);
+    this.defaultWeights.set('BELOW_MARKET_VALUE', 12);
     this.defaultWeights.set('CODE_CASE', 20);
     this.defaultWeights.set('PERMIT_ISSUE', 10);
     this.defaultWeights.set('TAX_DELINQUENT', 25);
@@ -264,6 +270,16 @@ export class ScoringEngine {
       case 'PORTFOLIO_OWNER':
         const count = payload?.ownerParcelCount || 0;
         return `Portfolio owner (${count} properties)`;
+
+      case 'HIGH_LAND_RATIO':
+        return `Land is ${Math.round((payload?.ratio || 0) * 100)}% of total value (redevelopment potential)`;
+
+      case 'LARGE_LOT':
+        const acres = payload?.lotSizeAcres || 0;
+        return `Large ${acres.toFixed(1)}-acre residential lot (lot-split potential)`;
+
+      case 'BELOW_MARKET_VALUE':
+        return 'Assessed value well below county average for property type';
 
       case 'CODE_CASE':
         return 'Open code enforcement case';
