@@ -27,20 +27,25 @@ SUPA_URL = os.environ['SUPABASE_URL']
 SUPA_KEY = os.environ['SUPABASE_SECRET_KEY']
 ARCGIS = ('https://maps.co.kern.ca.us/arcgis/rest/services/Assessor/'
           'Assessor_Public/MapServer/2/query')
-# Public token embedded in the Kern GIS viewer config (rotates occasionally).
-TOKEN = 'OaLtuFLgwBWEBNaw_CnyoCbrO7bU4ka4XivfqO-gCD4.'
+# Public token minted by the Kern GIS viewer per session (expires — refresh by
+# loading https://maps.kerncounty.com/H5/index.html?viewer=KCPublic and grabbing
+# a token= param from its network calls). Override with --token=XXX.
+TOKEN = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--token=')),
+             'E9-O3Dag0ITeGppzm7iJnQfhh9nbHY12nO88VCrdMXw.')
 DRY_RUN = '--dry-run' in sys.argv
 LIMIT = int(next((a.split('=')[1] for a in sys.argv if a.startswith('--limit=')), '0'))
 BATCH = int(next((a.split('=')[1] for a in sys.argv if a.startswith('--batch=')), '25'))
 
 
-def req(url, method='GET', body=None, timeout=60):
+def req(url, method='GET', body=None, timeout=60, headers=None):
     # NOTE: no User-Agent header — Supabase REST 401s browser UAs.
     h = {
         'apikey': SUPA_KEY,
         'Authorization': f'Bearer {SUPA_KEY}',
         'Content-Type': 'application/json',
     }
+    if headers:
+        h.update(headers)
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(url, data=data, method=method, headers=h)
     with urllib.request.urlopen(r, timeout=timeout) as resp:
@@ -142,19 +147,18 @@ def main():
                 print(' ', u.get('address_line_1', '(geom only)'),
                       u.get('latitude'), u.get('longitude'))
         elif updates:
-            try:
-                # PostgREST requires identical keys across all objects in a
-                # batch PATCH — normalize with nulls for missing fields.
-                all_keys = set()
-                for u in updates:
-                    all_keys.update(u.keys())
-                payload = [{k: u.get(k) for k in all_keys if k != 'id'}
-                           for u in updates]
-                ids = ','.join(u['id'] for u in updates)
-                req(f'{SUPA_URL}/rest/v1/properties?id=in.({ids})', 'PATCH', payload)
-                enriched += len(updates)
-            except Exception as e:
-                print(f'  patch error: {e}')
+            # Per-row PATCH: one request per row, filtered by its own id.
+            # A single-object PATCH on a single matched row cannot scramble.
+            # (Array-body PATCH with id=in.() applies values positionally and
+            # POST-upsert fails NOT NULL checks on partial payloads.)
+            for u in updates:
+                try:
+                    body = {k: v for k, v in u.items() if k != 'id'}
+                    req(f"{SUPA_URL}/rest/v1/properties?id=eq.{u['id']}",
+                        'PATCH', body)
+                    enriched += 1
+                except Exception as e:
+                    print(f"  row {u['id'][:8]} patch error: {e}")
         done = min(i + BATCH, len(work))
         rate = done / max(time.time() - t0, 1)
         print(f'  {done}/{len(work)} scanned, {enriched} enriched '
