@@ -143,9 +143,14 @@ def main():
                       u.get('latitude'), u.get('longitude'))
         elif updates:
             try:
+                # PostgREST requires identical keys across all objects in a
+                # batch PATCH — normalize with nulls for missing fields.
+                all_keys = set()
+                for u in updates:
+                    all_keys.update(u.keys())
+                payload = [{k: u.get(k) for k in all_keys if k != 'id'}
+                           for u in updates]
                 ids = ','.join(u['id'] for u in updates)
-                # Strip ids from the payload — they select rows via the URL filter.
-                payload = [{k: v for k, v in u.items() if k != 'id'} for u in updates]
                 req(f'{SUPA_URL}/rest/v1/properties?id=in.({ids})', 'PATCH', payload)
                 enriched += len(updates)
             except Exception as e:
