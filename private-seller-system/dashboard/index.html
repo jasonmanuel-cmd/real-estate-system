@@ -87,24 +87,22 @@ select.status{padding:4px 6px;font-size:12px;border:1px solid var(--border);bord
   <div class="wrap">
     <div class="stats" id="stats"></div>
     <div class="toolbar">
-      <select id="f-score"><option value="">All scores</option><option value="7">Hot 7+</option><option value="5">Warm 5+</option><option value="1">Scored 1+</option></select>
-      <select id="f-source"><option value="">All sources</option></select>
-      <select id="f-status"><option value="">All statuses</option><option>new</option><option>contacted</option><option>skipped</option><option>dead</option><option>won</option></select>
-      <input type="text" id="f-q" placeholder="Search address, owner, description…">
+      <select id="f-tier"><option value="">All tiers</option><option value="A">Tier A</option><option value="B">Tier B</option><option value="C">Tier C</option><option value="D">Tier D</option></select>
+      <select id="f-stage"><option value="">All stages</option><option>new</option><option>researching</option><option>contacted</option><option>under_contract</option><option>dead</option><option>won</option></select>
+      <select id="f-score"><option value="">Any score</option><option value="20">20+</option><option value="15">15+</option><option value="10">10+</option></select>
+      <input type="text" id="f-q" placeholder="Search address, city, APN…">
       <span class="count" id="count"></span>
     </div>
     <div class="tblwrap">
       <table>
         <thead><tr>
-          <th onclick="sortBy('deal_score')">Score</th>
-          <th onclick="sortBy('address')">Property</th>
-          <th onclick="sortBy('source')">Source</th>
-          <th onclick="sortBy('price')">Price</th>
-          <th>Owner</th>
-          <th onclick="sortBy('status')">Status</th>
-          <th>Link</th>
+          <th onclick="sortBy('total_score')">Tier · Score</th>
+          <th onclick="sortBy('address_line_1')">Property</th>
+          <th>Signals</th>
+          <th onclick="sortBy('latest_event')">Latest event</th>
+          <th onclick="sortBy('stage')">Stage</th>
         </tr></thead>
-        <tbody id="rows"><tr><td colspan="7" class="loading">Loading…</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="foot">
@@ -117,7 +115,7 @@ select.status{padding:4px 6px;font-size:12px;border:1px solid var(--border);bord
 <script>
 const LS_KEY='hs_private_leads_token';
 let token=localStorage.getItem(LS_KEY)||'';
-let leads=[],total=0,offset=0,limit=200,sortKey='deal_score',sortDesc=true,filters={};
+let leads=[],total=0,offset=0,limit=200,sortKey='total_score',sortDesc=true,filters={};
 let debounceT=null;
 
 function api(path,opts){return fetch(path,{...opts,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json',...(opts?.headers||{})}})}
@@ -140,12 +138,12 @@ function showApp(){document.getElementById('login').style.display='none';documen
 async function load(){
   const p=new URLSearchParams();
   if(filters.min_score)p.set('min_score',filters.min_score);
-  if(filters.source)p.set('source',filters.source);
-  if(filters.status)p.set('status',filters.status);
+  if(filters.tier)p.set('tier',filters.tier);
+  if(filters.stage)p.set('stage',filters.stage);
   if(filters.q)p.set('q',filters.q);
   p.set('limit',limit);p.set('offset',offset);
   const body=document.getElementById('rows');
-  body.innerHTML='<tr><td colspan="7" class="loading">Loading…</td></tr>';
+  body.innerHTML='<tr><td colspan="5" class="loading">Loading…</td></tr>';
   try{
     const r=await api('/api/leads?'+p);
     if(r.status===401){logout();return}
@@ -153,44 +151,40 @@ async function load(){
     if(data.error)throw new Error(data.error);
     leads=data.leads;total=data.total;
     render();
-  }catch(e){body.innerHTML='<tr><td colspan="7" class="empty">'+e.message+'</td></tr>'}
+  }catch(e){body.innerHTML='<tr><td colspan="5" class="empty">'+e.message+'</td></tr>'}
 }
 
 function render(){
   // stats
-  const hot=lead=>lead.deal_score>=7, warm=lead=>lead.deal_score>=5&&lead.deal_score<7;
-  const fresh=lead=>lead.status==='new';
-  const sources={};leads.forEach(l=>sources[l.source]=(sources[l.source]||0)+1);
+  const hot=lead=>lead.lead_tier==='A'||lead.lead_tier==='B';
+  const fresh=lead=>lead.stage==='new';
+  const tiers={};leads.forEach(l=>tiers[l.lead_tier]=(tiers[l.lead_tier]||0)+1);
   document.getElementById('stats').innerHTML=`
-    <div class="stat"><b>${total.toLocaleString()}</b><span>Total leads</span></div>
-    <div class="stat hot"><b>${leads.filter(hot).length}</b><span>Hot on page (7+)</span></div>
-    <div class="stat gold-stat"><b>${leads.filter(warm).length}</b><span>Warm on page (5-6)</span></div>
-    <div class="stat"><b>${leads.filter(fresh).length}</b><span>New on page</span></div>
-    <div class="stat"><b>${Object.keys(sources).length}</b><span>Active sources</span></div>`;
-  // source filter options
-  const sel=document.getElementById('f-source');
-  const current=sel.value;
-  const opts=['<option value="">All sources</option>'].concat(Object.keys(sources).sort().map(s=>`<option${s===current?' selected':''}>${s}</option>`));
-  sel.innerHTML=opts.join('');
+    <div class="stat"><b>${total.toLocaleString()}</b><span>Total properties</span></div>
+    <div class="stat hot"><b>${leads.filter(hot).length}</b><span>A/B tier on page</span></div>
+    <div class="stat gold-stat"><b>${leads.filter(fresh).length}</b><span>New stage on page</span></div>
+    <div class="stat"><b>${tiers.A||0}</b><span>Tier A on page</span></div>
+    <div class="stat"><b>${tiers.B||0}</b><span>Tier B on page</span></div>`;
   // rows
   const body=document.getElementById('rows');
   if(!leads.length){body.innerHTML='<tr><td colspan="7" class="empty">No leads match these filters.</td></tr>'}
   else body.innerHTML=leads.map(l=>{
-    const cls=l.deal_score>=7?'s-hot':l.deal_score>=5?'s-warm':l.deal_score>0?'s-cool':'s-zero';
-    const price=l.price?('$'+l.price.toLocaleString()):l.price_text||'—';
-    const owner=l.owner_name||'<span style="color:#aaa">—</span>';
-    const link=l.link?`<a class="link-out" href="${l.link}" target="_blank" rel="noreferrer">Open ↗</a>`:'—';
-    const city=l.city?` · ${l.city}`:'';
+    const t=l.lead_tier||'D';
+    const cls=t==='A'?'s-hot':t==='B'?'s-warm':t==='C'?'s-cool':'s-zero';
+    const signals=(l.signals||[]).slice(0,3).map(esc).join(', ');
+    const city=l.city?` · ${esc(l.city)}`:'';
+    const apn=l.apn?`<div class="meta">APN ${esc(l.apn)}</div>`:'';
+    const auction=l.next_auction?`<div class="meta">Auction ${esc(l.next_auction)}</div>`:'';
+    const follow=l.next_follow_up_at?`<div class="meta">Follow up ${esc(String(l.next_follow_up_at).slice(0,10))}</div>`:'';
+    const scores=`U${l.urgency_score||0} · E${l.equity_score||0} · R${l.risk_score||0}`;
     return `<tr>
-      <td><span class="score ${cls}">${l.deal_score||0}</span></td>
-      <td><div class="addr">${esc(l.address)}</div><div class="meta">${esc(l.source_type)}${city}</div></td>
-      <td><span class="src ${l.source}">${esc(l.source)}</span></td>
-      <td>${esc(price)}</td>
-      <td>${owner}</td>
-      <td><select class="status" onchange="setStatus('${esc(l.id)}',this.value)">
-        ${['new','contacted','skipped','dead','won'].map(s=>`<option${l.status===s?' selected':''}>${s}</option>`).join('')}
+      <td><span class="score ${cls}">${t} · ${l.total_score||0}</span></td>
+      <td><div class="addr">${esc(l.address_line_1)}</div><div class="meta">${city}${esc(l.county||'')} County · ${scores}</div>${apn}${auction}${follow}</td>
+      <td>${esc(signals)||'<span style="color:#aaa">—</span>'}</td>
+      <td>${esc(l.latest_event||'—')}</td>
+      <td><select class="status" onchange="setStage('${esc(l.property_id)}',this.value)">
+        ${['new','researching','contacted','under_contract','dead','won'].map(s=>`<option${l.stage===s?' selected':''}>${s}</option>`).join('')}
       </select></td>
-      <td>${link}</td>
     </tr>`}).join('');
   document.getElementById('count').textContent=`${offset+1}–${Math.min(offset+leads.length,total)} of ${total.toLocaleString()}`;
   document.getElementById('prev').disabled=offset<=0;
@@ -202,15 +196,15 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 
 function sortBy(key){if(sortKey===key)sortDesc=!sortDesc;else{sortKey=key;sortDesc=true}load()}
 function page(d){offset=Math.max(0,offset+d*limit);load()}
-async function setStatus(id,status){
-  try{const r=await api('/api/leads',{method:'PATCH',body:JSON.stringify({id,status})});
+async function setStage(property_id,stage){
+  try{const r=await api('/api/leads',{method:'PATCH',body:JSON.stringify({property_id,stage})});
     if(!r.ok)throw new Error((await r.json()).error||r.status);
-    const l=leads.find(x=>x.id===id);if(l)l.status=status;render();
+    const l=leads.find(x=>x.property_id===property_id);if(l)l.stage=stage;render();
   }catch(e){alert('Save failed: '+e.message)}
 }
 
-['f-score','f-source','f-status'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{
-  const map={'f-score':'min_score','f-source':'source','f-status':'status'};
+['f-score','f-tier','f-stage'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{
+  const map={'f-score':'min_score','f-tier':'tier','f-stage':'stage'};
   filters[map[id]]=e.target.value;offset=0;load();
 }));
 document.getElementById('f-q').addEventListener('input',e=>{
