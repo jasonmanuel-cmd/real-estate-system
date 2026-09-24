@@ -65,6 +65,9 @@ select.status{padding:4px 6px;font-size:12px;border:1px solid var(--border);bord
 .foot button:disabled{opacity:.45;cursor:default}
 .empty{padding:40px;text-align:center;color:#7a8a94;font-size:14px}
 .loading{padding:60px;text-align:center;color:#7a8a94;font-size:14px}
+.lnks{white-space:nowrap}
+.lnk{display:inline-block;margin:2px 6px 2px 0;padding:3px 10px;border-radius:6px;background:#123047;color:#d9b45b;font-size:11px;font-weight:600;text-decoration:none;border:1px solid #24425c}
+.lnk:hover{background:#1a3d59;color:#f0cd74}
 .badge{font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:2px 6px;border-radius:2px;background:var(--navy);color:var(--gold)}
 </style>
 </head>
@@ -101,8 +104,9 @@ select.status{padding:4px 6px;font-size:12px;border:1px solid var(--border);bord
           <th>Signals</th>
           <th onclick="sortBy('latest_event')">Latest event</th>
           <th onclick="sortBy('stage')">Stage</th>
+          <th>Find it</th>
         </tr></thead>
-        <tbody id="rows"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="foot">
@@ -167,7 +171,7 @@ function render(){
     <div class="stat"><b>${tiers.B||0}</b><span>Tier B on page</span></div>`;
   // rows
   const body=document.getElementById('rows');
-  if(!leads.length){body.innerHTML='<tr><td colspan="7" class="empty">No leads match these filters.</td></tr>'}
+  if(!leads.length){body.innerHTML='<tr><td colspan="6" class="empty">No leads match these filters.</td></tr>'}
   else body.innerHTML=leads.map(l=>{
     const t=l.lead_tier||'D';
     const cls=t==='A'?'s-hot':t==='B'?'s-warm':t==='C'?'s-cool':'s-zero';
@@ -177,6 +181,8 @@ function render(){
     const auction=l.next_auction?`<div class="meta">Auction ${esc(l.next_auction)}</div>`:'';
     const follow=l.next_follow_up_at?`<div class="meta">Follow up ${esc(String(l.next_follow_up_at).slice(0,10))}</div>`:'';
     const scores=`U${l.urgency_score||0} · E${l.equity_score||0} · R${l.risk_score||0}`;
+    const src=l.source_url?`<a class="lnk" href="${esc(l.source_url)}" target="_blank" rel="noopener">Source</a>`:'';
+    const map=l.maps_url?`<a class="lnk" href="${esc(l.maps_url)}" target="_blank" rel="noopener">Map</a>`:'';
     return `<tr>
       <td><span class="score ${cls}">${t} · ${l.total_score||0}</span></td>
       <td><div class="addr">${esc(l.address_line_1)}</div><div class="meta">${city}${esc(l.county||'')} County · ${scores}</div>${apn}${auction}${follow}</td>
@@ -185,6 +191,7 @@ function render(){
       <td><select class="status" onchange="setStage('${esc(l.property_id)}',this.value)">
         ${['new','researching','contacted','under_contract','dead','won'].map(s=>`<option${l.stage===s?' selected':''}>${s}</option>`).join('')}
       </select></td>
+      <td class="lnks">${src}${map}</td>
     </tr>`}).join('');
   document.getElementById('count').textContent=`${offset+1}–${Math.min(offset+leads.length,total)} of ${total.toLocaleString()}`;
   document.getElementById('prev').disabled=offset<=0;

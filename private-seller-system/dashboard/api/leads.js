@@ -110,7 +110,7 @@ export async function handler(request) {
         params.set('or', `(address_line_1.ilike.*${term}*,city.ilike.*${term}*,apn.ilike.*${term}*)`);
       }
       // Order by joined score is not supported by PostgREST; sort client-side.
-      params.set('select', 'id,state,county,address_line_1,city,zip,apn,lead_scores(total_score,lead_tier,urgency_score,equity_score,risk_score),deals(stage,next_follow_up_at)');
+      params.set('select', 'id,state,county,address_line_1,city,zip,apn,latitude,longitude,lead_scores(total_score,lead_tier,urgency_score,equity_score,risk_score),deals(stage,next_follow_up_at)');
       params.set('limit', String(limit));
       params.set('offset', String(offset));
 
@@ -120,19 +120,53 @@ export async function handler(request) {
         supabase(`/properties?${query}&select=id`, { headers: { Prefer: 'count=exact' } }),
       ]);
       const rows = await leadsRes.json();
+
+      // Fetch source links for these properties from raw_lead_intake (no FK
+      // relationship, so query by property_id list).
+      let linksByProperty = {};
+      try {
+        const ids = rows.map(r => r.id);
+        if (ids.length) {
+          const intakeRes = await supabase(
+            `/raw_lead_intake?select=property_id,source_url&property_id=in.(${ids.join(',')})&limit=${ids.length}`);
+          const intakes = await intakeRes.json();
+          for (const it of intakes) {
+            if (it.source_url && !linksByProperty[it.property_id]) {
+              linksByProperty[it.property_id] = it.source_url;
+            }
+          }
+        }
+      } catch { /* links are best-effort */ }
+
       // Flatten for the dashboard and sort by score desc.
-      const leads = rows.map(r => ({
-        property_id: r.id,
-        state: r.state, county: r.county,
-        address_line_1: r.address_line_1, city: r.city, zip: r.zip, apn: r.apn,
-        total_score: r.lead_scores?.total_score ?? 0,
-        lead_tier: r.lead_scores?.lead_tier ?? 'D',
-        urgency_score: r.lead_scores?.urgency_score ?? 0,
-        equity_score: r.lead_scores?.equity_score ?? 0,
-        risk_score: r.lead_scores?.risk_score ?? 0,
-        stage: r.deals?.stage ?? 'new',
-        next_follow_up_at: r.deals?.next_follow_up_at ?? null,
-      })).sort((a, b) => b.total_score - a.total_score);
+      const leads = rows.map(r => {
+        const address = r.address_line_1 || '';
+        const city = r.city || '';
+        // Parcel coordinates beat text search — exact pin on the property.
+        let mapsUrl;
+        if (r.latitude && r.longitude) {
+          mapsUrl = `https://www.google.com/maps?q=${r.latitude},${r.longitude}`;
+        } else if (address && !address.startsWith('APN')) {
+          mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${address}, ${city}, ${r.state || 'CA'}`)}`;
+        } else {
+          mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`APN ${r.apn}, ${r.county || 'Kern'} County, ${r.state || 'CA'}`)}`;
+        }
+        return {
+          property_id: r.id,
+          state: r.state, county: r.county,
+          address_line_1: r.address_line_1, city: r.city, zip: r.zip, apn: r.apn,
+          latitude: r.latitude, longitude: r.longitude,
+          total_score: r.lead_scores?.total_score ?? 0,
+          lead_tier: r.lead_scores?.lead_tier ?? 'D',
+          urgency_score: r.lead_scores?.urgency_score ?? 0,
+          equity_score: r.lead_scores?.equity_score ?? 0,
+          risk_score: r.lead_scores?.risk_score ?? 0,
+          stage: r.deals?.stage ?? 'new',
+          next_follow_up_at: r.deals?.next_follow_up_at ?? null,
+          source_url: linksByProperty[r.id] || null,
+          maps_url: mapsUrl,
+        };
+      }).sort((a, b) => b.total_score - a.total_score);
       const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0', 10);
       return json({ leads, total, limit, offset });
     }
