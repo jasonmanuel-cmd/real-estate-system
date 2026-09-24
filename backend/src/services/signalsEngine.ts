@@ -1,6 +1,22 @@
-import { SignalType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
+
+// Signal types (SQLite uses strings instead of enums)
+type SignalType =
+  | 'NON_OWNER_OCCUPIED'
+  | 'LONG_OWNERSHIP'
+  | 'RECENT_DEED'
+  | 'EQUITY_PROXY'
+  | 'PORTFOLIO_OWNER'
+  | 'HIGH_LAND_RATIO'
+  | 'LARGE_LOT'
+  | 'BELOW_MARKET_VALUE'
+  | 'CODE_CASE'
+  | 'PERMIT_ISSUE'
+  | 'TAX_DELINQUENT'
+  | 'FIRE_DAMAGE'
+  | 'FORECLOSURE_RELATED';
 
 interface SignalDefinition {
   type: SignalType;
@@ -27,7 +43,7 @@ export class SignalsEngine {
     this.signalDefinitions = [
       // BASELINE SIGNAL 1: Non-owner occupied
       {
-        type: SignalType.NON_OWNER_OCCUPIED,
+        type: 'NON_OWNER_OCCUPIED',
         severity: 3,
         checkCondition: (parcel, context) => {
           if (!parcel.owner?.mailingAddressStandardized || !parcel.situsAddress) {
@@ -46,7 +62,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 2: Long ownership (various thresholds)
       {
-        type: SignalType.LONG_OWNERSHIP,
+        type: 'LONG_OWNERSHIP',
         severity: 2,
         checkCondition: (parcel, context) => {
           const yearsOwned = context.yearsOwned;
@@ -60,7 +76,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 3: Recent deed activity
       {
-        type: SignalType.RECENT_DEED,
+        type: 'RECENT_DEED',
         severity: 3,
         checkCondition: (parcel, context) => {
           return context.hasRecentDeed;
@@ -73,7 +89,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 4: Equity proxy (long ownership + assessed value)
       {
-        type: SignalType.EQUITY_PROXY,
+        type: 'EQUITY_PROXY',
         severity: 3,
         checkCondition: (parcel, context) => {
           const yearsOwned = context.yearsOwned;
@@ -91,7 +107,7 @@ export class SignalsEngine {
 
       // BASELINE SIGNAL 5: Portfolio owner
       {
-        type: SignalType.PORTFOLIO_OWNER,
+        type: 'PORTFOLIO_OWNER',
         severity: 2,
         checkCondition: (parcel, context) => {
           return context.ownerParcelCount >= 2;
@@ -102,9 +118,67 @@ export class SignalsEngine {
         }),
       },
 
+      // VALUE SIGNAL 1: High land-to-value ratio (teardown/redevelopment potential)
+      // Land worth >= 70% of total assessed value means improvements add little -
+      // classic candidate for redevelopment or a lowball land offer.
+      {
+        type: 'HIGH_LAND_RATIO',
+        severity: 3,
+        checkCondition: (parcel, context) => {
+          const land = parcel.assessedValueLand;
+          const total = parcel.assessedValueTotal;
+          if (!land || !total) return false;
+          // NET_VAL can be below LAND_VAL when exemptions apply; use the
+          // gross basis (land + improvements) for the ratio so it stays <= 1.
+          const gross = Math.max(total, land + (parcel.assessedValueImprovement || 0));
+          return land / gross >= 0.7 && gross > 50000;
+        },
+        getMetadata: (parcel) => {
+          const land = parcel.assessedValueLand;
+          const total = parcel.assessedValueTotal;
+          const gross = Math.max(total, land + (parcel.assessedValueImprovement || 0));
+          return {
+            landValue: land,
+            totalValue: total,
+            ratio: gross ? Number((land / gross).toFixed(2)) : null,
+          };
+        },
+      },
+
+      // VALUE SIGNAL 2: Large residential lot (subdivision/lot-split potential)
+      {
+        type: 'LARGE_LOT',
+        severity: 2,
+        checkCondition: (parcel) => {
+          if (!parcel.lotSize) return false;
+          const isResidential = ['SFR', 'MULTIFAMILY'].includes(parcel.propertyType);
+          return isResidential && parcel.lotSize >= 1.0;
+        },
+        getMetadata: (parcel) => ({
+          lotSizeAcres: parcel.lotSize,
+          propertyType: parcel.propertyType,
+        }),
+      },
+
+      // VALUE SIGNAL 3: Below-market assessed value vs county average for its type
+      {
+        type: 'BELOW_MARKET_VALUE',
+        severity: 2,
+        checkCondition: (parcel, context) => {
+          const total = parcel.assessedValueTotal;
+          const avg = context.countyAvgValueForType;
+          if (!total || !avg) return false;
+          return total < avg * 0.5 && total > 20000;
+        },
+        getMetadata: (parcel, context) => ({
+          assessedValue: parcel.assessedValueTotal,
+          countyAvgForType: context.countyAvgValueForType,
+        }),
+      },
+
       // OPTIONAL SIGNAL: Code enforcement cases
       {
-        type: SignalType.CODE_CASE,
+        type: 'CODE_CASE',
         severity: 4,
         checkCondition: (parcel, context) => {
           return context.hasOpenCodeCase;
@@ -117,7 +191,7 @@ export class SignalsEngine {
 
       // OPTIONAL SIGNAL: Tax delinquency
       {
-        type: SignalType.TAX_DELINQUENT,
+        type: 'TAX_DELINQUENT',
         severity: 5,
         checkCondition: (parcel, context) => {
           return context.isTaxDelinquent;
@@ -130,7 +204,7 @@ export class SignalsEngine {
 
       // OPTIONAL SIGNAL: Foreclosure-related deed activity
       {
-        type: SignalType.FORECLOSURE_RELATED,
+        type: 'FORECLOSURE_RELATED',
         severity: 5,
         checkCondition: (parcel, context) => {
           return context.hasForeclosureDeed;
@@ -167,8 +241,22 @@ export class SignalsEngine {
       // Build context for signal evaluation
       const context = await this.buildParcelContext(parcel);
 
-      // Delete existing signals for this parcel
-      await prisma.signal.deleteMany({ where: { apn } });
+      // Delete existing DERIVED signals for this parcel, but PRESERVE
+      // externally imported ones (TAX_DELINQUENT from the county's published
+      // delinquent list, etc.) - those carry source data we can't re-derive.
+      const externalTypes = ['TAX_DELINQUENT'];
+      const existingSignals = await prisma.signal.findMany({
+        where: { parcelId: parcel.id },
+        select: { signalType: true },
+      });
+      const derivedTypes = existingSignals
+        .map((s: any) => s.signalType)
+        .filter((t: string) => !externalTypes.includes(t));
+      if (derivedTypes.length > 0) {
+        await prisma.signal.deleteMany({
+          where: { parcelId: parcel.id, signalType: { in: derivedTypes } },
+        });
+      }
 
       // Generate new signals
       let signalsGenerated = 0;
@@ -176,13 +264,14 @@ export class SignalsEngine {
 
       for (const signalDef of this.signalDefinitions) {
         if (signalDef.checkCondition(parcel, context)) {
+          const metadata = signalDef.getMetadata(parcel, context);
           signalsToCreate.push({
-            apn,
+            parcelId: parcel.id,
             signalType: signalDef.type,
             severity: signalDef.severity,
             signalDate: new Date(),
             sourceName: 'system',
-            rawPayload: signalDef.getMetadata(parcel, context),
+            rawPayload: JSON.stringify(metadata), // Store as JSON string for SQLite
           });
           signalsGenerated++;
         }
@@ -299,6 +388,18 @@ export class SignalsEngine {
       _avg: { assessedValueTotal: true },
     });
     context.countyMedianValue = countyStats._avg.assessedValueTotal || 0;
+
+    // Average assessed value for this property type in the county
+    // (used by BELOW_MARKET_VALUE signal)
+    const typeStats = await prisma.parcel.aggregate({
+      where: {
+        countyName: parcel.countyName,
+        propertyType: parcel.propertyType,
+        assessedValueTotal: { not: null },
+      },
+      _avg: { assessedValueTotal: true },
+    });
+    context.countyAvgValueForType = typeStats._avg.assessedValueTotal || 0;
 
     // Check for code cases (if data available)
     // This would require additional tables/data sources

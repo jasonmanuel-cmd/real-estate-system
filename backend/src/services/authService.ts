@@ -1,13 +1,24 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const MFA_ISSUER = process.env.MFA_ISSUER || 'CA Deal Engine';
+/**
+ * JWT secret is read lazily (at call time, not module load) so that
+ * dotenv.config() in server.ts is guaranteed to have run first regardless of
+ * import order. Previously this worked only by accident: Prisma's client
+ * auto-loads .env before this module loads. Fail hard in production if unset.
+ */
+function getJwtSecret(): Secret {
+  const secret = process.env.JWT_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be set when NODE_ENV=production');
+  }
+  return 'default-secret-change-me';
+}
 
 interface JwtPayload {
   userId: string;
@@ -71,7 +82,7 @@ export class AuthService {
         userId: user.id,
         action: 'login',
         resource: 'auth',
-        metadata: { email },
+        metadata: JSON.stringify({ email }), // Store as JSON string for SQLite
       },
     });
 
@@ -120,9 +131,10 @@ export class AuthService {
       throw new Error('User not found');
     }
 
+    const issuer = process.env.MFA_ISSUER || 'CA Deal Engine';
     const secret = speakeasy.generateSecret({
-      name: `${MFA_ISSUER} (${user.email})`,
-      issuer: MFA_ISSUER,
+      name: `${issuer} (${user.email})`,
+      issuer,
     });
 
     // Store the secret (temporarily, until verified)
@@ -249,9 +261,10 @@ export class AuthService {
    * Generate JWT token
    */
   private generateToken(payload: JwtPayload, expiresIn?: string): string {
-    return jwt.sign(payload, JWT_SECRET, {
-      expiresIn: expiresIn || JWT_EXPIRES_IN,
-    });
+    const options: SignOptions = {
+      expiresIn: (expiresIn || process.env.JWT_EXPIRES_IN || '7d') as SignOptions['expiresIn'],
+    };
+    return jwt.sign(payload, getJwtSecret(), options);
   }
 
   /**
@@ -259,7 +272,7 @@ export class AuthService {
    */
   verifyToken(token: string): string | jwt.JwtPayload {
     try {
-      return jwt.verify(token, JWT_SECRET);
+      return jwt.verify(token, getJwtSecret());
     } catch (error) {
       throw new Error('Invalid or expired token');
     }

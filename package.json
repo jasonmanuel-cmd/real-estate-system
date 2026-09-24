@@ -5,8 +5,7 @@
   "private": true,
   "workspaces": [
     "backend",
-    "frontend",
-    "shared"
+    "frontend"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { etlRunner } from './etlRunner';
 import { kernCountyAssessorAdapter } from './adapters/kernCountyAssessorAdapter';
+import { kernCountyArcgisAdapter } from './adapters/kernCountyArcgisAdapter';
 import { logger } from '../utils/logger';
 
 /**
@@ -23,11 +24,11 @@ export class EtlScheduler {
 
     logger.info(`Starting ETL scheduler with cron: ${schedule}`);
 
-    // Schedule Kern County assessor data refresh
+    // Schedule Kern County assessor data refresh (real ArcGIS source)
     const kernTask = cron.schedule(schedule, async () => {
-      logger.info('Running scheduled Kern County ETL job...');
+      logger.info('Running scheduled Kern County ETL job (ArcGIS)...');
       try {
-        const result = await etlRunner.runJob(kernCountyAssessorAdapter);
+        const result = await etlRunner.runJob(kernCountyArcgisAdapter);
         logger.info('Scheduled Kern County ETL job completed:', result);
       } catch (error) {
         logger.error('Scheduled Kern County ETL job failed:', error);
@@ -59,6 +60,8 @@ export class EtlScheduler {
     switch (adapterName) {
       case 'kern_county_assessor':
         return etlRunner.runJob(kernCountyAssessorAdapter);
+      case 'kern_county_arcgis':
+        return etlRunner.runJob(kernCountyArcgisAdapter);
       default:
         throw new Error(`Unknown adapter: ${adapterName}`);
     }

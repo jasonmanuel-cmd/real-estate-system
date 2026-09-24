@@ -1,10 +1,13 @@
 import { EtlAdapter } from '../etlRunner';
-import { PropertyType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import prisma from '../../config/database';
 import { logger } from '../../utils/logger';
 import axios from 'axios';
 import fs from 'fs';
 import csv from 'csv-parser';
+
+// Type alias for SQLite (no enums)
+type PropertyType = 'SFR' | 'LAND' | 'MULTIFAMILY' | 'COMMERCIAL' | 'OTHER';
 
 /**
  * Kern County Assessor Data Adapter
@@ -152,12 +155,12 @@ export class KernCountyAssessorAdapter implements EtlAdapter {
           // Data source metadata
           dataSourceName: 'Kern County Assessor',
           dataSourceDate: new Date(),
-        };
 
-        // Geocoding (optional - can be done in post-processing)
-        // For now, leave lat/lng null - can add geocoding service later
-        parcelData['lat'] = null;
-        parcelData['lng'] = null;
+          // Geocoding (optional - can be done in post-processing)
+          // For now, leave lat/lng null - can add geocoding service later
+          lat: null,
+          lng: null,
+        };
 
         transformed.push(parcelData);
       } catch (error: any) {
@@ -194,13 +197,10 @@ export class KernCountyAssessorAdapter implements EtlAdapter {
           });
         }
 
-        // Upsert parcel
+        // Upsert parcel (SQLite uses apn as unique key)
         await prisma.parcel.upsert({
           where: {
-            countyFips_apn: {
-              countyFips: data.countyFips,
-              apn: data.apn,
-            },
+            apn: data.apn,
           },
           create: {
             ...data,
@@ -269,25 +269,25 @@ export class KernCountyAssessorAdapter implements EtlAdapter {
   }
 
   private mapPropertyType(useCode: string): PropertyType {
-    if (!useCode) return PropertyType.OTHER;
+    if (!useCode) return 'OTHER';
 
     const code = useCode.toUpperCase();
 
     // Common patterns (adjust based on Kern County codes)
     if (code.includes('SFR') || code.includes('SINGLE') || code.includes('RESIDENTIAL')) {
-      return PropertyType.SFR;
+      return 'SFR';
     }
     if (code.includes('LAND') || code.includes('VACANT')) {
-      return PropertyType.LAND;
+      return 'LAND';
     }
     if (code.includes('MULTI') || code.includes('APARTMENT') || code.includes('DUPLEX')) {
-      return PropertyType.MULTIFAMILY;
+      return 'MULTIFAMILY';
     }
     if (code.includes('COMM') || code.includes('OFFICE') || code.includes('RETAIL') || code.includes('INDUSTRIAL')) {
-      return PropertyType.COMMERCIAL;
+      return 'COMMERCIAL';
     }
 
-    return PropertyType.OTHER;
+    return 'OTHER';
   }
 
   private parseNumber(value: any): number | null {

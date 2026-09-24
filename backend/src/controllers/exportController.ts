@@ -3,7 +3,6 @@ import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 import { stringify } from 'csv-stringify/sync';
-import { LeadStatus } from '@prisma/client';
 
 export class ExportController {
   /**
@@ -70,11 +69,11 @@ export class ExportController {
         'Property City': lead.parcel.city || '',
         'Property Zip': lead.parcel.zip || '',
         County: lead.parcel.countyName,
-        APN: lead.apn,
+        APN: lead.parcel.apn,
         Score: lead.parcel.score?.scoreTotal || 0,
-        'Top Reason': lead.parcel.score?.topReasons?.[0] || '',
+        'Top Reason': (lead.parcel.score?.topReasons || '').split(',')[0] || '',
         'Property Type': lead.parcel.propertyType,
-        Tags: lead.tags.join(', '),
+        Tags: lead.tags || '',
         Notes: lead.notes || '',
       }));
 
@@ -86,10 +85,10 @@ export class ExportController {
           userId: req.user?.id,
           action: 'export_mailing_list',
           resource: 'lead',
-          metadata: {
-            count: leads.length,
+          metadata: JSON.stringify({
+            count: mailingData.length,
             filters,
-          },
+          }),
         },
       });
 
@@ -133,7 +132,7 @@ export class ExportController {
         'Property Address': lead.parcel.situsAddress,
         County: lead.parcel.countyName,
         Score: lead.parcel.score?.scoreTotal || 0,
-        'Call Script Notes': lead.parcel.score?.topReasons?.join('; ') || '',
+        'Call Script Notes': lead.parcel.score?.topReasons || '',
         'Last Contact': '', // Would come from outreach logs
         Status: lead.status,
       }));
@@ -146,7 +145,7 @@ export class ExportController {
           userId: req.user?.id,
           action: 'export_call_sheet',
           resource: 'lead',
-          metadata: { count: leads.length },
+          metadata: JSON.stringify({ count: leads.length }),
         },
       });
 
@@ -181,7 +180,7 @@ export class ExportController {
       });
 
       const propertyData = leads.map(lead => ({
-        APN: lead.apn,
+        APN: lead.parcel.apn,
         'Property Address': lead.parcel.situsAddress,
         City: lead.parcel.city || '',
         Zip: lead.parcel.zip || '',
@@ -197,9 +196,9 @@ export class ExportController {
         'Mailing Address': lead.parcel.owner?.mailingAddressStandardized || '',
         Score: lead.parcel.score?.scoreTotal || 0,
         'Signal Count': lead.parcel.signals?.length || 0,
-        'Top Signals': lead.parcel.score?.topReasons?.join('; ') || '',
+        'Top Signals': lead.parcel.score?.topReasons || '',
         'Lead Status': lead.status,
-        Tags: lead.tags.join(', '),
+        Tags: lead.tags || '',
       }));
 
       const csv = stringify(propertyData, { header: true });
@@ -209,7 +208,7 @@ export class ExportController {
           userId: req.user?.id,
           action: 'export_property_data',
           resource: 'lead',
-          metadata: { count: leads.length },
+          metadata: JSON.stringify({ count: leads.length }),
         },
       });
 

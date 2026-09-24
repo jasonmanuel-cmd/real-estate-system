@@ -1,5 +1,7 @@
-import { PropertyType } from '@prisma/client';
 import { logger } from '../utils/logger';
+
+// Type alias for SQLite (no enums)
+type PropertyType = 'SFR' | 'LAND' | 'MULTIFAMILY' | 'COMMERCIAL' | 'OTHER';
 
 export interface WholesaleInputs {
   arv: number;
@@ -284,7 +286,7 @@ export class DealCalculator {
 
     try {
       switch (propertyType) {
-        case PropertyType.SFR:
+        case 'SFR':
           // Calculate wholesale and BRRRR for SFR
           if (inputs.arv && inputs.rehab) {
             results.push(
@@ -325,7 +327,7 @@ export class DealCalculator {
           }
           break;
 
-        case PropertyType.MULTIFAMILY:
+        case 'MULTIFAMILY':
           if (inputs.units && inputs.avgRentPerUnit) {
             results.push(
               this.calculateMultifamily({
@@ -339,7 +341,7 @@ export class DealCalculator {
           }
           break;
 
-        case PropertyType.COMMERCIAL:
+        case 'COMMERCIAL':
           if (inputs.noi) {
             results.push(
               this.calculateCommercial({
@@ -350,7 +352,7 @@ export class DealCalculator {
           }
           break;
 
-        case PropertyType.LAND:
+        case 'LAND':
           if (inputs.landValue || inputs.arv) {
             results.push(
               this.calculateLand({

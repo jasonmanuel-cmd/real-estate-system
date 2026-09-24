@@ -2,10 +2,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Docker runner is alpine with openssl 3; without this the query engine
+  // for that target isn't bundled and Prisma Client fails to start.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

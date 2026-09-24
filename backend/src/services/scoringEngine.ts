@@ -1,9 +1,24 @@
-import { SignalType } from '@prisma/client';
 import prisma from '../config/database';
 import { logger } from '../utils/logger';
 
+// Signal types (SQLite uses strings instead of enums)
+type SignalType =
+  | 'NON_OWNER_OCCUPIED'
+  | 'LONG_OWNERSHIP'
+  | 'RECENT_DEED'
+  | 'EQUITY_PROXY'
+  | 'PORTFOLIO_OWNER'
+  | 'HIGH_LAND_RATIO'
+  | 'LARGE_LOT'
+  | 'BELOW_MARKET_VALUE'
+  | 'CODE_CASE'
+  | 'PERMIT_ISSUE'
+  | 'TAX_DELINQUENT'
+  | 'FIRE_DAMAGE'
+  | 'FORECLOSURE_RELATED';
+
 interface ScoreComponent {
-  signalType: SignalType;
+  signalType: string;
   weight: number;
   contribution: number;
   reason: string;
@@ -14,7 +29,7 @@ interface ScoreComponent {
  * Configurable weights allow tuning based on market feedback
  */
 export class ScoringEngine {
-  private defaultWeights: Map<SignalType, number> = new Map();
+  private defaultWeights: Map<string, number> = new Map();
 
   constructor() {
     this.initializeDefaultWeights();
@@ -25,16 +40,19 @@ export class ScoringEngine {
    * These can be overridden by database config
    */
   private initializeDefaultWeights() {
-    this.defaultWeights.set(SignalType.NON_OWNER_OCCUPIED, 15);
-    this.defaultWeights.set(SignalType.LONG_OWNERSHIP, 20); // Will vary by years
-    this.defaultWeights.set(SignalType.RECENT_DEED, 15);
-    this.defaultWeights.set(SignalType.EQUITY_PROXY, 15);
-    this.defaultWeights.set(SignalType.PORTFOLIO_OWNER, 15);
-    this.defaultWeights.set(SignalType.CODE_CASE, 20);
-    this.defaultWeights.set(SignalType.PERMIT_ISSUE, 10);
-    this.defaultWeights.set(SignalType.TAX_DELINQUENT, 25);
-    this.defaultWeights.set(SignalType.FORECLOSURE_RELATED, 25);
-    this.defaultWeights.set(SignalType.FIRE_DAMAGE, 20);
+    this.defaultWeights.set('NON_OWNER_OCCUPIED', 15);
+    this.defaultWeights.set('LONG_OWNERSHIP', 20); // Will vary by years
+    this.defaultWeights.set('RECENT_DEED', 15);
+    this.defaultWeights.set('EQUITY_PROXY', 15);
+    this.defaultWeights.set('PORTFOLIO_OWNER', 15);
+    this.defaultWeights.set('HIGH_LAND_RATIO', 15);
+    this.defaultWeights.set('LARGE_LOT', 10);
+    this.defaultWeights.set('BELOW_MARKET_VALUE', 12);
+    this.defaultWeights.set('CODE_CASE', 20);
+    this.defaultWeights.set('PERMIT_ISSUE', 10);
+    this.defaultWeights.set('TAX_DELINQUENT', 25);
+    this.defaultWeights.set('FORECLOSURE_RELATED', 25);
+    this.defaultWeights.set('FIRE_DAMAGE', 20);
   }
 
   /**
@@ -103,18 +121,18 @@ export class ScoringEngine {
 
       // Save score to database
       await prisma.score.upsert({
-        where: { apn },
+        where: { parcelId: parcel.id },
         create: {
-          apn,
+          parcelId: parcel.id,
           scoreTotal: Math.round(totalScore),
-          scoreComponents: { components },
-          topReasons,
+          scoreComponents: JSON.stringify({ components }), // Store as JSON string for SQLite
+          topReasons: topReasons.join(', '), // Store as comma-separated string for SQLite
           confidenceLevel,
         },
         update: {
           scoreTotal: Math.round(totalScore),
-          scoreComponents: { components },
-          topReasons,
+          scoreComponents: JSON.stringify({ components }), // Store as JSON string for SQLite
+          topReasons: topReasons.join(', '), // Store as comma-separated string for SQLite
           confidenceLevel,
           updatedAt: new Date(),
         },
@@ -169,10 +187,18 @@ export class ScoringEngine {
   private adjustContribution(signal: any, baseWeight: number): number {
     let contribution = baseWeight;
 
+    // Parse rawPayload from JSON string (SQLite storage)
+    let payload: any = {};
+    try {
+      payload = signal.rawPayload ? JSON.parse(signal.rawPayload) : {};
+    } catch (e) {
+      payload = {};
+    }
+
     switch (signal.signalType) {
-      case SignalType.LONG_OWNERSHIP:
+      case 'LONG_OWNERSHIP':
         // Increase weight for longer ownership
-        const yearsOwned = signal.rawPayload?.yearsOwned || 0;
+        const yearsOwned = payload?.yearsOwned || 0;
         if (yearsOwned >= 20) {
           contribution = baseWeight * 1.5;
         } else if (yearsOwned >= 15) {
@@ -184,9 +210,9 @@ export class ScoringEngine {
         }
         break;
 
-      case SignalType.PORTFOLIO_OWNER:
+      case 'PORTFOLIO_OWNER':
         // Increase weight for larger portfolios
-        const parcelCount = signal.rawPayload?.ownerParcelCount || 0;
+        const parcelCount = payload?.ownerParcelCount || 0;
         if (parcelCount >= 20) {
           contribution = baseWeight * 2;
         } else if (parcelCount >= 6) {
@@ -196,9 +222,9 @@ export class ScoringEngine {
         }
         break;
 
-      case SignalType.RECENT_DEED:
+      case 'RECENT_DEED':
         // Adjust based on deed type
-        const deedType = signal.rawPayload?.recentDeedType || '';
+        const deedType = payload?.recentDeedType || '';
         if (deedType.toLowerCase().includes('quitclaim')) {
           contribution = baseWeight * 1.3; // Quitclaims often indicate distress
         } else if (deedType.toLowerCase().includes('trustee')) {
@@ -218,38 +244,56 @@ export class ScoringEngine {
    * Generate human-readable reason for a signal
    */
   private generateReason(signal: any): string {
+    // Parse rawPayload from JSON string (SQLite storage)
+    let payload: any = {};
+    try {
+      payload = signal.rawPayload ? JSON.parse(signal.rawPayload) : {};
+    } catch (e) {
+      payload = {};
+    }
+
     switch (signal.signalType) {
-      case SignalType.NON_OWNER_OCCUPIED:
+      case 'NON_OWNER_OCCUPIED':
         return 'Non-owner occupied (investor property)';
 
-      case SignalType.LONG_OWNERSHIP:
-        const years = signal.rawPayload?.yearsOwned || 0;
+      case 'LONG_OWNERSHIP':
+        const years = payload?.yearsOwned || 0;
         return `Owned ${years} years (potential equity)`;
 
-      case SignalType.RECENT_DEED:
-        const deedType = signal.rawPayload?.recentDeedType || 'deed';
+      case 'RECENT_DEED':
+        const deedType = payload?.recentDeedType || 'deed';
         return `Recent ${deedType} activity`;
 
-      case SignalType.EQUITY_PROXY:
+      case 'EQUITY_PROXY':
         return 'High equity proxy (long ownership + value)';
 
-      case SignalType.PORTFOLIO_OWNER:
-        const count = signal.rawPayload?.ownerParcelCount || 0;
+      case 'PORTFOLIO_OWNER':
+        const count = payload?.ownerParcelCount || 0;
         return `Portfolio owner (${count} properties)`;
 
-      case SignalType.CODE_CASE:
+      case 'HIGH_LAND_RATIO':
+        return `Land is ${Math.round((payload?.ratio || 0) * 100)}% of total value (redevelopment potential)`;
+
+      case 'LARGE_LOT':
+        const acres = payload?.lotSizeAcres || 0;
+        return `Large ${acres.toFixed(1)}-acre residential lot (lot-split potential)`;
+
+      case 'BELOW_MARKET_VALUE':
+        return 'Assessed value well below county average for property type';
+
+      case 'CODE_CASE':
         return 'Open code enforcement case';
 
-      case SignalType.PERMIT_ISSUE:
+      case 'PERMIT_ISSUE':
         return 'Permit issues detected';
 
-      case SignalType.TAX_DELINQUENT:
+      case 'TAX_DELINQUENT':
         return 'Tax delinquency';
 
-      case SignalType.FORECLOSURE_RELATED:
+      case 'FORECLOSURE_RELATED':
         return 'Foreclosure-related deed activity';
 
-      case SignalType.FIRE_DAMAGE:
+      case 'FIRE_DAMAGE':
         return 'Fire damage reported';
 
       default:
@@ -295,7 +339,7 @@ export class ScoringEngine {
   /**
    * Load weights from database (or use defaults)
    */
-  private async loadWeights(): Promise<Map<SignalType, number>> {
+  private async loadWeights(): Promise<Map<string, number>> {
     try {
       const dbWeights = await prisma.scoreWeight.findMany({
         where: { isActive: true },
@@ -305,7 +349,7 @@ export class ScoringEngine {
         return this.defaultWeights;
       }
 
-      const weights = new Map<SignalType, number>();
+      const weights = new Map<string, number>();
       for (const weight of dbWeights) {
         weights.set(weight.signalType, weight.weight);
       }
@@ -327,7 +371,7 @@ export class ScoringEngine {
   /**
    * Update signal weight configuration
    */
-  async updateWeight(signalType: SignalType, weight: number, description?: string) {
+  async updateWeight(signalType: string, weight: number, description?: string) {
     await prisma.scoreWeight.upsert({
       where: { signalType },
       create: {

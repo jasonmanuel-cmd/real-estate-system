@@ -8,8 +8,9 @@
     "start": "node dist/server.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:seed": "ts-node database/seeds/seed.ts",
-    "etl:run": "ts-node src/etl/run-etl.ts"
+    "db:seed": "ts-node src/etl/run-etl.ts kern_county_assessor",
+    "etl:run": "ts-node src/etl/run-etl.ts",
+    "etl:real": "ts-node src/etl/run-etl.ts kern_county_arcgis"
   },
   "dependencies": {
     "@prisma/client": "^5.8.0",
@@ -33,7 +34,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/jsonwebtoken": "^9.0.5",
+    "@types/jsonwebtoken": "9.0.10",
     "@types/node": "^20.10.6",
     "@types/node-cron": "^3.0.11",
     "@types/speakeasy": "^2.0.10",
