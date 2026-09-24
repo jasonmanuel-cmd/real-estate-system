@@ -110,7 +110,7 @@ export async function handler(request) {
         params.set('or', `(address_line_1.ilike.*${term}*,city.ilike.*${term}*,apn.ilike.*${term}*)`);
       }
       // Order by joined score is not supported by PostgREST; sort client-side.
-      params.set('select', 'id,state,county,address_line_1,city,zip,apn,latitude,longitude,lead_scores(total_score,lead_tier,urgency_score,equity_score,risk_score),deals(stage,next_follow_up_at)');
+      params.set('select', 'id,state,county,address_line_1,city,zip,apn,latitude,longitude,lead_scores(total_score,lead_tier,urgency_score,equity_score,risk_score),deals(stage,next_follow_up_at),distress_events(event_type,auction_date,amount_owed),property_owners(owners(full_name,entity_type,mailing_address,city,state,phone))');
       params.set('limit', String(limit));
       params.set('offset', String(offset));
 
@@ -163,6 +163,21 @@ export async function handler(request) {
           risk_score: r.lead_scores?.risk_score ?? 0,
           stage: r.deals?.stage ?? 'new',
           next_follow_up_at: r.deals?.next_follow_up_at ?? null,
+          // Distress signals: event types + min bid (amount_owed) + auction date.
+          events: (r.distress_events || []).map(e => ({
+            type: e.event_type, auction_date: e.auction_date,
+            amount_owed: e.amount_owed,
+          })),
+          min_bid: Math.min(...(r.distress_events || [])
+            .map(e => e.amount_owed).filter(v => v != null), Infinity) || null,
+          // Owner info via the property_owners junction.
+          owners: (r.property_owners || [])
+            .map(po => po.owners).filter(Boolean)
+            .map(o => ({
+              name: o.full_name, entity_type: o.entity_type,
+              mailing_address: o.mailing_address,
+              city: o.city, state: o.state, phone: o.phone,
+            })),
           source_url: linksByProperty[r.id] || null,
           maps_url: mapsUrl,
         };

@@ -68,6 +68,9 @@ select.status{padding:4px 6px;font-size:12px;border:1px solid var(--border);bord
 .lnks{white-space:nowrap}
 .lnk{display:inline-block;margin:2px 6px 2px 0;padding:3px 10px;border-radius:6px;background:#123047;color:#d9b45b;font-size:11px;font-weight:600;text-decoration:none;border:1px solid #24425c}
 .lnk:hover{background:#1a3d59;color:#f0cd74}
+.owner{font-size:11px;color:#c8d4dc;margin-top:3px;font-weight:600}
+.export{margin-left:auto;padding:7px 16px;border-radius:6px;background:#d9b45b;color:#0d2137;border:none;font-size:12px;font-weight:700;cursor:pointer}
+.export:hover{background:#f0cd74}
 .badge{font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:2px 6px;border-radius:2px;background:var(--navy);color:var(--gold)}
 </style>
 </head>
@@ -95,6 +98,7 @@ select.status{padding:4px 6px;font-size:12px;border:1px solid var(--border);bord
       <select id="f-score"><option value="">Any score</option><option value="20">20+</option><option value="15">15+</option><option value="10">10+</option></select>
       <input type="text" id="f-q" placeholder="Search address, city, APN…">
       <span class="count" id="count"></span>
+      <button class="export" onclick="exportCSV()">Export CSV</button>
     </div>
     <div class="tblwrap">
       <table>
@@ -175,19 +179,26 @@ function render(){
   else body.innerHTML=leads.map(l=>{
     const t=l.lead_tier||'D';
     const cls=t==='A'?'s-hot':t==='B'?'s-warm':t==='C'?'s-cool':'s-zero';
-    const signals=(l.signals||[]).slice(0,3).map(esc).join(', ');
+    const signals=(l.events||[]).map(e=>e.type.replace(/_/g,' '));
+    const uniq=[...new Set(signals)];
     const city=l.city?` · ${esc(l.city)}`:'';
     const apn=l.apn?`<div class="meta">APN ${esc(l.apn)}</div>`:'';
-    const auction=l.next_auction?`<div class="meta">Auction ${esc(l.next_auction)}</div>`:'';
+    const bid=l.min_bid?`<div class="meta">Min bid $${Number(l.min_bid).toLocaleString()}</div>`:'';
     const follow=l.next_follow_up_at?`<div class="meta">Follow up ${esc(String(l.next_follow_up_at).slice(0,10))}</div>`:'';
     const scores=`U${l.urgency_score||0} · E${l.equity_score||0} · R${l.risk_score||0}`;
+    const ownerList=(l.owners||[]);
+    const owner=ownerList.length
+      ?`<div class="owner">${esc(ownerList[0].name)}${ownerList.length>1?` <span class="meta">+${ownerList.length-1} more</span>`:''}</div>`
+      :'';
+    const auction=(l.events||[]).find(e=>e.auction_date);
+    const latest=auction?`Auction ${esc(String(auction.auction_date).slice(0,10))}`:(uniq[0]||'—');
     const src=l.source_url?`<a class="lnk" href="${esc(l.source_url)}" target="_blank" rel="noopener">Source</a>`:'';
     const map=l.maps_url?`<a class="lnk" href="${esc(l.maps_url)}" target="_blank" rel="noopener">Map</a>`:'';
     return `<tr>
       <td><span class="score ${cls}">${t} · ${l.total_score||0}</span></td>
-      <td><div class="addr">${esc(l.address_line_1)}</div><div class="meta">${city}${esc(l.county||'')} County · ${scores}</div>${apn}${auction}${follow}</td>
-      <td>${esc(signals)||'<span style="color:#aaa">—</span>'}</td>
-      <td>${esc(l.latest_event||'—')}</td>
+      <td><div class="addr">${esc(l.address_line_1)}</div><div class="meta">${city}${esc(l.county||'')} County · ${scores}</div>${apn}${bid}${follow}${owner}</td>
+      <td>${esc(uniq.slice(0,3).join(', '))||'<span style="color:#aaa">—</span>'}</td>
+      <td>${esc(latest)}</td>
       <td><select class="status" onchange="setStage('${esc(l.property_id)}',this.value)">
         ${['new','researching','contacted','under_contract','dead','won'].map(s=>`<option${l.stage===s?' selected':''}>${s}</option>`).join('')}
       </select></td>
@@ -200,6 +211,48 @@ function render(){
 }
 
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function exportCSV(){
+  // Fetch ALL rows matching current filters (not just the current page).
+  const p=new URLSearchParams();
+  if(filters.min_score)p.set('min_score',filters.min_score);
+  if(filters.tier)p.set('tier',filters.tier);
+  if(filters.stage)p.set('stage',filters.stage);
+  if(filters.q)p.set('q',filters.q);
+  p.set('limit','1000');p.set('offset','0');
+  const rows=[];
+  let total=Infinity,off=0;
+  try{
+    while(off<total){
+      p.set('offset',String(off));
+      const r=await api('/api/leads?'+p);
+      if(r.status===401){logout();return}
+      const d=await r.json();
+      if(d.error)throw new Error(d.error);
+      total=d.total;rows.push(...d.leads);off+=d.leads.length;
+      if(!d.leads.length)break;
+    }
+  }catch(e){alert('Export failed: '+e.message);return}
+  const csvEsc=v=>{const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+  const cols=['tier','score','address','city','county','apn','min_bid','owners','signals','stage','latitude','longitude','maps_url','source_url'];
+  const lines=[cols.join(',')];
+  for(const l of rows){
+    lines.push([
+      l.lead_tier,l.total_score,l.address_line_1,l.city,l.county,l.apn,
+      l.min_bid??'',
+      (l.owners||[]).map(o=>o.name).join('; '),
+      [...new Set((l.events||[]).map(e=>e.type))].join('; '),
+      l.stage,l.latitude??'',l.longitude??'',
+      l.maps_url||'',l.source_url||''
+    ].map(csvEsc).join(','));
+  }
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='harbison-leads-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 function sortBy(key){if(sortKey===key)sortDesc=!sortDesc;else{sortKey=key;sortDesc=true}load()}
 function page(d){offset=Math.max(0,offset+d*limit);load()}
