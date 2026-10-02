@@ -18,7 +18,7 @@
     "etl:run": "npm run etl:run --workspace=backend"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^10.0.5"
   },
   "engines": {
     "node": ">=18.0.0",
