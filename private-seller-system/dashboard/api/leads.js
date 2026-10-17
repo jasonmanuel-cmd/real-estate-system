@@ -5,6 +5,8 @@
 // PATCH /api/leads  {property_id, stage}
 // Handles both Web Request (modern builder) and Node IncomingMessage (legacy).
 
+import { timingSafeEqual as compareBytes } from 'node:crypto';
+
 const ALLOWED_STAGES = ['new', 'researching', 'contacted', 'under_contract', 'dead', 'won'];
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -40,16 +42,7 @@ function normalizeRequest(request) {
 }
 
 function timingSafeEqual(a, b) {
-  // Web Crypto has no timingSafeEqual; use node:crypto when available, else constant-time compare.
-  try {
-    const { timingSafeEqual: tse } = require('node:crypto');
-    return a.length === b.length && tse(a, b);
-  } catch {
-    if (a.length !== b.length) return false;
-    let diff = 0;
-    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    return diff === 0;
-  }
+  return a.length === b.length && compareBytes(a, b);
 }
 
 function authed(req) {
@@ -57,8 +50,8 @@ function authed(req) {
   if (!expected) return { ok: false, why: 'not_configured' };
   const header = req.headerGet('authorization') || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
-  const param = new URL(req.url).searchParams.get('token') || '';
-  const supplied = bearer || param;
+  // URLs are logged and copied; credentials must be sent only in headers.
+  const supplied = bearer;
   if (!supplied) return { ok: false, why: 'missing' };
   const ok = timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
   return { ok, why: ok ? 'ok' : 'invalid' };
