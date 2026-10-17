@@ -8,7 +8,7 @@ import { logger } from '../utils/logger';
  * ETL Scheduler - runs ETL jobs on a schedule
  */
 export class EtlScheduler {
-  private tasks: Map<string, cron.ScheduledTask> = new Map();
+  private tasks: Map<string, ReturnType<typeof cron.schedule>> = new Map();
 
   /**
    * Start the scheduler

@@ -15,7 +15,8 @@
     "start": "npm run start --workspaces",
     "db:migrate": "npm run db:migrate --workspace=backend",
     "db:seed": "npm run db:seed --workspace=backend",
-    "etl:run": "npm run etl:run --workspace=backend"
+    "etl:run": "npm run etl:run --workspace=backend",
+    "test": "node --test private-seller-system/dashboard/api/leads.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
